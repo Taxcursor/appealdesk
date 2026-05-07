@@ -136,22 +136,23 @@ export async function updateProceeding(proceedingId: string, proc: ProceedingInp
   revalidatePath("/litigations");
 }
 
-export async function addProceeding(appealId: string, proc: ProceedingInput): Promise<void> {
+export async function addProceeding(appealId: string, proc: ProceedingInput): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const { error } = await supabase.from("proceedings").insert({
+  const { data, error } = await supabase.from("proceedings").insert({
     appeal_id: appealId,
     service_provider_id: spId,
     ...cleanProceeding(proc),
-  });
+  }).select("id").single();
 
   if (error) throw new Error(error.message);
   revalidatePath(`/litigations/${appealId}`);
   revalidatePath("/litigations");
+  return data.id;
 }
 
 export async function updateEvent(eventId: string, input: EventInput): Promise<void> {
@@ -191,14 +192,14 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<v
   revalidatePath("/litigations");
 }
 
-export async function addEvent(input: EventInput): Promise<void> {
+export async function addEvent(input: EventInput): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const { error } = await supabase.from("events").insert({
+  const { data, error } = await supabase.from("events").insert({
     proceeding_id: input.proceeding_id,
     service_provider_id: spId,
     category: input.category,
@@ -206,11 +207,12 @@ export async function addEvent(input: EventInput): Promise<void> {
     description: input.description || null,
     details: input.details ?? {},
     created_by: user.id,
-  });
+  }).select("id").single();
 
   if (error) throw new Error(error.message);
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "event", entityLabel: input.category });
   revalidatePath("/litigations");
+  return data.id;
 }
 
 export async function deleteProceeding(proceedingId: string): Promise<void> {

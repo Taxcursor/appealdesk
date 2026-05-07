@@ -869,12 +869,31 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [addProcSaving, setAddProcSaving] = useState(false);
   const [addProcError, setAddProcError] = useState<string | null>(null);
 
+  const [addProcPendingFiles, setAddProcPendingFiles] = useState<{ file: File; desc: string }[]>([]);
+
+  function addProcFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setAddProcPendingFiles((prev) => [...prev, ...files.map((f) => ({ file: f, desc: "" }))]);
+    e.target.value = "";
+  }
+
   async function handleAddProc(e: React.FormEvent) {
     e.preventDefault();
     setAddProcSaving(true); setAddProcError(null);
     try {
-      await addProceeding(appeal.id, addProcValues);
-      setShowAddProc(false); setAddProcValues({}); router.refresh();
+      const procId = await addProceeding(appeal.id, addProcValues);
+      if (addProcPendingFiles.length > 0) {
+        const supabase = createClient();
+        for (const { file, desc } of addProcPendingFiles) {
+          const path = `proceeding-docs/${procId}/${Date.now()}-${file.name}`;
+          const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
+          if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
+          const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
+          await uploadProceedingDocument(procId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        }
+      }
+      setShowAddProc(false); setAddProcValues({}); setAddProcPendingFiles([]); router.refresh();
     } catch (err) {
       setAddProcError(err instanceof Error ? err.message : "Failed to add proceeding.");
     } finally { setAddProcSaving(false); }
@@ -887,6 +906,14 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [eventDescription, setEventDescription] = useState("");
   const [eventSaving, setEventSaving] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
+  const [addEventPendingFiles, setAddEventPendingFiles] = useState<{ file: File; desc: string }[]>([]);
+
+  function addEventFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setAddEventPendingFiles((prev) => [...prev, ...files.map((f) => ({ file: f, desc: "" }))]);
+    e.target.value = "";
+  }
 
   // ── View Event ──
   const [viewEvent, setViewEvent] = useState<AppEvent | null>(null);
@@ -997,7 +1024,6 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     if (!addEventProcId || !eventCategory) { setEventError("Category is required."); return; }
     setEventSaving(true); setEventError(null);
     try {
-      // Derive primary event_date from category-specific fields
       const primaryKey = PRIMARY_DATE[eventCategory];
       const primaryDate = primaryKey && eventDetails[primaryKey]
         ? new Date(eventDetails[primaryKey]).toISOString()
@@ -1010,8 +1036,18 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
         description: eventDescription || undefined,
         details: eventDetails,
       };
-      await addEvent(input);
-      setAddEventProcId(null);
+      const eventId = await addEvent(input);
+      if (addEventPendingFiles.length > 0) {
+        const supabase = createClient();
+        for (const { file, desc } of addEventPendingFiles) {
+          const path = `event-docs/${eventId}/${Date.now()}-${file.name}`;
+          const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
+          if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
+          const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
+          await uploadEventDocument(eventId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        }
+      }
+      setAddEventProcId(null); setAddEventPendingFiles([]);
       router.refresh();
     } catch (err) {
       setEventError(err instanceof Error ? err.message : "Failed to add event.");
@@ -1379,12 +1415,36 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* ── Add Proceeding Modal ── */}
       {showAddProc && (
-        <Modal title="Add Proceeding" onClose={() => setShowAddProc(false)}>
+        <Modal title="Add Proceeding" onClose={() => { setShowAddProc(false); setAddProcPendingFiles([]); }}>
           <form onSubmit={handleAddProc} className="space-y-4">
             <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
+            {/* Attachments */}
+            <div className="border-t border-[#F3F4F6] pt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[#6B7280]">Attachments (optional)</span>
+                <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-[#F8F9FA] transition">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                  Choose Files
+                  <input type="file" multiple className="hidden" onChange={addProcFileSelect} />
+                </label>
+              </div>
+              {addProcPendingFiles.map(({ file, desc }, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  <span className="text-xs text-[#1A1A2E] truncate w-32 flex-shrink-0">{file.name}</span>
+                  <input type="text" placeholder="Description (optional)" value={desc}
+                    onChange={(e) => setAddProcPendingFiles((prev) => prev.map((p, i) => i === idx ? { ...p, desc: e.target.value } : p))}
+                    className="flex-1 px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F]" />
+                  <button type="button" onClick={() => setAddProcPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                    className="p-1 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
             {addProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{addProcError}</div>}
             <div className="flex gap-3 justify-end pt-2">
-              <button type="button" onClick={() => setShowAddProc(false)} className="px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
+              <button type="button" onClick={() => { setShowAddProc(false); setAddProcPendingFiles([]); }} className="px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
               <button type="submit" disabled={addProcSaving} className="px-4 py-2 text-sm bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium transition disabled:opacity-60">
                 {addProcSaving ? "Adding…" : "Add Proceeding"}
               </button>
@@ -1612,10 +1672,35 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               />
             </Field>
 
+            {/* Attachments */}
+            <div className="border-t border-[#F3F4F6] pt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[#6B7280]">Attachments (optional)</span>
+                <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-[#F8F9FA] transition">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                  Choose Files
+                  <input type="file" multiple className="hidden" onChange={addEventFileSelect} />
+                </label>
+              </div>
+              {addEventPendingFiles.map(({ file, desc }, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  <span className="text-xs text-[#1A1A2E] truncate w-28 flex-shrink-0">{file.name}</span>
+                  <input type="text" placeholder="Description (optional)" value={desc}
+                    onChange={(e) => setAddEventPendingFiles((prev) => prev.map((p, i) => i === idx ? { ...p, desc: e.target.value } : p))}
+                    className="flex-1 px-2 py-0.5 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F]" />
+                  <button type="button" onClick={() => setAddEventPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                    className="p-0.5 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+
             {eventError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{eventError}</div>}
 
             <div className="flex gap-3 justify-end pt-2">
-              <button type="button" onClick={() => setAddEventProcId(null)}
+              <button type="button" onClick={() => { setAddEventProcId(null); setAddEventPendingFiles([]); }}
                 className="px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">
                 Cancel
               </button>
