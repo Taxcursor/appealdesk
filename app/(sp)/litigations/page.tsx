@@ -11,9 +11,8 @@ const APPEAL_SELECT = `
   client_org:organizations!client_org_id(id, name),
   proceedings(
     id, authority_name, importance, status,
-    to_be_completed_by, assigned_to, possible_outcome, is_active,
-    proceeding_type:master_records!proceeding_type_id(id, name),
-    assigned_user:users!assigned_to(first_name, last_name)
+    to_be_completed_by, assigned_to_ids, possible_outcome, is_active,
+    proceeding_type:master_records!proceeding_type_id(id, name)
   )
 `;
 
@@ -76,7 +75,7 @@ export default async function AppealsPage({
   if (filterImportance || filterAssigned) {
     let procQ = supabase.from("proceedings").select("appeal_id").eq("is_active", true);
     if (filterImportance) procQ = procQ.eq("importance", filterImportance);
-    if (filterAssigned) procQ = procQ.eq("assigned_to", filterAssigned);
+    if (filterAssigned) procQ = procQ.contains("assigned_to_ids", [filterAssigned]);
     const { data: procs } = await procQ;
     procAppealIds = [...new Set((procs ?? []).map((p: any) => p.appeal_id as string))];
   }

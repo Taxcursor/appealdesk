@@ -1,8 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+// Replace characters that are invalid or percent-encoded-unsafe in storage paths.
+// The display file_name stored in the DB is always the original name.
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+// ── ESC handler stack ─────────────────────────────────────────────
+// Last-registered handler wins — inner dialogs intercept ESC before outer modals.
+const _escStack: Array<() => void> = [];
+if (typeof window !== "undefined" && !(window as any).__escListenerRegistered) {
+  (window as any).__escListenerRegistered = true;
+  window.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Escape" && _escStack.length > 0) _escStack[_escStack.length - 1]();
+  }, true);
+}
+function useEscHandler(handler: () => void, active: boolean) {
+  const handlerRef = useRef(handler);
+  useEffect(() => { handlerRef.current = handler; });
+  useEffect(() => {
+    if (!active) return;
+    const fn = () => handlerRef.current();
+    _escStack.push(fn);
+    return () => { const i = _escStack.indexOf(fn); if (i !== -1) _escStack.splice(i, 1); };
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 import {
   updateAppeal, updateProceeding, addProceeding, addEvent, updateEvent,
   deleteEvent, deleteAppeal, deleteProceeding,
@@ -70,14 +97,12 @@ interface Proceeding {
   mode: string | null;
   initiated_on: string | null;
   to_be_completed_by: string | null;
-  assigned_to: string | null;
-  client_staff_id: string | null;
+  assigned_to_ids: string[] | null;
+  client_staff_ids: string[] | null;
   possible_outcome: string | null;
   status: string | null;
   is_active: boolean;
   created_at: string;
-  assigned_user: { first_name: string; last_name: string } | null;
-  client_staff: { first_name: string; last_name: string } | null;
   events: AppEvent[];
   proceeding_documents?: AttachedFile[];
 }
@@ -150,16 +175,13 @@ const MASTER_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
 
 const SUB_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
   response_to_notice: [
-    { key: "response_against_notice_dated", label: "Response Against Notice Dated", type: "datetime" },
     { key: "response_submitted_on", label: "Response Submitted On", type: "datetime" },
     { key: "due_date", label: "Due Date", type: "datetime" },
   ],
   adjournment_request: [
-    { key: "against_notice_date", label: "Against Notice Date", type: "datetime" },
     { key: "adjourned_to", label: "Adjourned To", type: "datetime" },
   ],
   personal_follow_up: [
-    { key: "against_notice_dated", label: "Against Notice Dated", type: "datetime" },
     { key: "follow_up_with", label: "Follow Up With", type: "text" },
     { key: "follow_up_by", label: "Follow Up By", type: "text" },
   ],
@@ -181,7 +203,6 @@ const PRIMARY_DATE: Record<string, string> = {
   others: "date",
   response_to_notice: "response_submitted_on",
   adjournment_request: "adjourned_to",
-  personal_follow_up: "against_notice_dated",
   others_sub: "date",
 };
 
@@ -195,7 +216,6 @@ const DUE_DATE_KEY: Record<string, string> = {
   others: "due_date",
   response_to_notice: "due_date",
   adjournment_request: "adjourned_to",
-  personal_follow_up: "due_date",
   others_sub: "due_date",
 };
 
@@ -361,7 +381,18 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<AttachedFile | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const activeDocs = docs.filter((d) => !d.deleted_at);
+  const [uploadedDocs, setUploadedDocs] = useState<AttachedFile[]>([]);
+  const activeDocs = [...docs.filter((d) => !d.deleted_at), ...uploadedDocs];
+
+  // When router.refresh() brings back updated docs, drop any uploadedDocs whose IDs
+  // are now present in the refreshed prop — prevents rendering them twice.
+  useEffect(() => {
+    if (uploadedDocs.length === 0) return;
+    const serverIds = new Set(docs.map((d) => d.id));
+    setUploadedDocs((prev) => prev.filter((d) => !serverIds.has(d.id)));
+  }, [docs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEscHandler(() => setConfirmDelete(null), !!confirmDelete);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -384,11 +415,12 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
     const supabase = createClient();
     try {
       for (const { file, desc } of pendingFiles) {
-        const path = `proceeding-docs/${proceedingId}/${Date.now()}-${file.name}`;
+        const path = `proceeding-docs/${proceedingId}/${Date.now()}-${sanitizeFileName(file.name)}`;
         const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
         if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
         const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
-        await uploadProceedingDocument(proceedingId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        const docId = await uploadProceedingDocument(proceedingId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        setUploadedDocs((prev) => [...prev, { id: docId, file_name: file.name, file_url: urlData.publicUrl, file_size: file.size, description: desc.trim() || null, created_at: new Date().toISOString() }]);
       }
       setPendingFiles([]);
       router.refresh();
@@ -402,6 +434,7 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
     setDeleting(true);
     try {
       await deleteProceedingDocument(confirmDelete.id);
+      setUploadedDocs((prev) => prev.filter((d) => d.id !== confirmDelete.id));
       setConfirmDelete(null);
       router.refresh();
     } catch { /* swallow */ } finally { setDeleting(false); }
@@ -463,11 +496,11 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
               </div>
             ))}
             <div className="flex gap-2 pt-1">
-              <button onClick={handleUploadAll} disabled={uploading}
+              <button type="button" onClick={handleUploadAll} disabled={uploading}
                 className="px-3 py-1 text-xs bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium disabled:opacity-50">
                 {uploading ? "Uploading…" : `Attach ${pendingFiles.length > 1 ? `All (${pendingFiles.length})` : "File"}`}
               </button>
-              <button onClick={() => { setPendingFiles([]); setError(null); }}
+              <button type="button" onClick={() => { setPendingFiles([]); setError(null); }}
                 className="px-3 py-1 text-xs border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-white">
                 Cancel
               </button>
@@ -481,9 +514,9 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
             <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Delete Attachment?</h3>
             <p className="text-sm text-[#6B7280] mb-5">Delete <strong>"{confirmDelete.file_name}"</strong>? This will move it to trash.</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+              <button type="button" onClick={() => setConfirmDelete(null)} disabled={deleting}
                 className="flex-1 px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
-              <button onClick={handleDelete} disabled={deleting}
+              <button type="button" onClick={handleDelete} disabled={deleting}
                 className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-60">
                 {deleting ? "Deleting…" : "Delete"}
               </button>
@@ -506,7 +539,16 @@ function EventAttachments({ eventId, docs, canEdit }: {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<AttachedFile | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const activeDocs = docs.filter((d) => !d.deleted_at);
+  const [uploadedDocs, setUploadedDocs] = useState<AttachedFile[]>([]);
+  const activeDocs = [...docs.filter((d) => !d.deleted_at), ...uploadedDocs];
+
+  useEffect(() => {
+    if (uploadedDocs.length === 0) return;
+    const serverIds = new Set(docs.map((d) => d.id));
+    setUploadedDocs((prev) => prev.filter((d) => !serverIds.has(d.id)));
+  }, [docs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEscHandler(() => setConfirmDelete(null), !!confirmDelete);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -529,11 +571,12 @@ function EventAttachments({ eventId, docs, canEdit }: {
     const supabase = createClient();
     try {
       for (const { file, desc } of pendingFiles) {
-        const path = `event-docs/${eventId}/${Date.now()}-${file.name}`;
+        const path = `event-docs/${eventId}/${Date.now()}-${sanitizeFileName(file.name)}`;
         const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
         if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
         const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
-        await uploadEventDocument(eventId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        const docId = await uploadEventDocument(eventId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        setUploadedDocs((prev) => [...prev, { id: docId, file_name: file.name, file_url: urlData.publicUrl, file_size: file.size, description: desc.trim() || null, created_at: new Date().toISOString() }]);
       }
       setPendingFiles([]);
       router.refresh();
@@ -547,6 +590,7 @@ function EventAttachments({ eventId, docs, canEdit }: {
     setDeleting(true);
     try {
       await deleteEventDocument(confirmDelete.id);
+      setUploadedDocs((prev) => prev.filter((d) => d.id !== confirmDelete.id));
       setConfirmDelete(null);
       router.refresh();
     } catch { /* swallow */ } finally { setDeleting(false); }
@@ -606,11 +650,11 @@ function EventAttachments({ eventId, docs, canEdit }: {
               </div>
             ))}
             <div className="flex gap-2 pt-0.5">
-              <button onClick={handleUploadAll} disabled={uploading}
+              <button type="button" onClick={handleUploadAll} disabled={uploading}
                 className="px-2.5 py-1 text-xs bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium disabled:opacity-50">
                 {uploading ? "Uploading…" : `Attach ${pendingFiles.length > 1 ? `All (${pendingFiles.length})` : "File"}`}
               </button>
-              <button onClick={() => { setPendingFiles([]); setError(null); }}
+              <button type="button" onClick={() => { setPendingFiles([]); setError(null); }}
                 className="px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-white">
                 Cancel
               </button>
@@ -624,9 +668,9 @@ function EventAttachments({ eventId, docs, canEdit }: {
             <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Delete File?</h3>
             <p className="text-sm text-[#6B7280] mb-5">Delete <strong>"{confirmDelete.file_name}"</strong>? This will move it to trash.</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+              <button type="button" onClick={() => setConfirmDelete(null)} disabled={deleting}
                 className="flex-1 px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
-              <button onClick={handleDelete} disabled={deleting}
+              <button type="button" onClick={handleDelete} disabled={deleting}
                 className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-60">
                 {deleting ? "Deleting…" : "Delete"}
               </button>
@@ -638,12 +682,76 @@ function EventAttachments({ eventId, docs, canEdit }: {
   );
 }
 
+// ─── Multi-select dropdown ────────────────────────────────────────
+function MultiSelect({ options, selected, onChange, placeholder }: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (vals: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useState(() => ({ current: null as HTMLDivElement | null }))[0];
+
+  function toggle(value: string) {
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+  }
+
+  const selectedLabels = options.filter(o => selected.includes(o.value)).map(o => o.label);
+
+  return (
+    <div className="relative" ref={(el) => { ref.current = el; }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        className={`${inp} flex items-center justify-between gap-2 cursor-pointer min-h-[42px] flex-wrap`}
+      >
+        {selectedLabels.length === 0 ? (
+          <span className="text-[#9CA3AF] text-sm">{placeholder ?? "Select…"}</span>
+        ) : (
+          <div className="flex flex-wrap gap-1 flex-1">
+            {selectedLabels.map((label, i) => (
+              <span key={i} className="inline-flex px-2 py-0.5 bg-[#EEF2FF] text-[#4A6FA5] rounded text-xs font-medium">
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
+        <svg className={`w-4 h-4 flex-shrink-0 text-[#6B7280] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            {options.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-[#9CA3AF]">No options available</div>
+            ) : options.map(opt => (
+              <div key={opt.value} onClick={() => toggle(opt.value)}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-[#F3F4F6] cursor-pointer">
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected.includes(opt.value) ? "bg-[#1E3A5F] border-[#1E3A5F]" : "border-[#D1D5DB]"}`}>
+                  {selected.includes(opt.value) && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <span className="text-sm text-[#1A1A2E]">{opt.label}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Proceeding Form Fields ────────────────────────────────────────
 function ProceedingFormFields({
-  values, onChange, mastersByType, teamMembers, clientUsers, actRegulationId,
+  values, onChange, onMultiChange, mastersByType, teamMembers, clientUsers, actRegulationId,
 }: {
   values: ProceedingInput;
   onChange: (field: keyof ProceedingInput, value: string) => void;
+  onMultiChange: (field: keyof ProceedingInput, value: string[]) => void;
   mastersByType: Record<string, MasterItem[]>;
   teamMembers: { id: string; first_name: string; last_name: string }[];
   clientUsers: { id: string; first_name: string; last_name: string }[];
@@ -697,16 +805,20 @@ function ProceedingFormFields({
         <input type="date" value={values.to_be_completed_by ?? ""} onChange={(e) => onChange("to_be_completed_by", e.target.value)} className={inp} />
       </Field>
       <Field label="Assigned To">
-        <select value={values.assigned_to ?? ""} onChange={(e) => onChange("assigned_to", e.target.value)} className={inp}>
-          <option value="">Unassigned</option>
-          {[...teamMembers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name}</option>)}
-        </select>
+        <MultiSelect
+          options={[...teamMembers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map(m => ({ value: m.id, label: `${m.first_name} ${m.last_name}` }))}
+          selected={values.assigned_to_ids ?? []}
+          onChange={(ids) => onMultiChange("assigned_to_ids", ids)}
+          placeholder="Unassigned"
+        />
       </Field>
       <Field label="Client Staff">
-        <select value={values.client_staff_id ?? ""} onChange={(e) => onChange("client_staff_id", e.target.value)} className={inp}>
-          <option value="">None</option>
-          {[...clientUsers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map((u) => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
-        </select>
+        <MultiSelect
+          options={[...clientUsers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map(u => ({ value: u.id, label: `${u.first_name} ${u.last_name}` }))}
+          selected={values.client_staff_ids ?? []}
+          onChange={(ids) => onMultiChange("client_staff_ids", ids)}
+          placeholder="None"
+        />
       </Field>
       <Field label="Possible Outcome">
         <select value={values.possible_outcome ?? ""} onChange={(e) => onChange("possible_outcome", e.target.value)} className={inp}>
@@ -728,13 +840,32 @@ function ProceedingFormFields({
 }
 
 // ─── Modal wrapper ─────────────────────────────────────────────────
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, isDirty, children }: {
+  title: string;
+  onClose: () => void;
+  isDirty?: boolean;
+  children: React.ReactNode;
+}) {
+  const [showDiscard, setShowDiscard] = useState(false);
+
+  function handleClose() {
+    if (isDirty) setShowDiscard(true);
+    else onClose();
+  }
+
+  // ESC: if discard confirm is visible, dismiss it; else respect dirty state
+  useEscHandler(() => {
+    if (showDiscard) setShowDiscard(false);
+    else if (isDirty) setShowDiscard(true);
+    else onClose();
+  }, true);
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl border border-[#E5E7EB] w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-[#E5E7EB] flex items-center justify-between flex-shrink-0">
           <h3 className="text-base font-semibold text-[#1A1A2E]">{title}</h3>
-          <button onClick={onClose} className="text-[#9CA3AF] hover:text-[#6B7280]">
+          <button onClick={handleClose} className="text-[#9CA3AF] hover:text-[#6B7280]">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -742,6 +873,24 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
         </div>
         <div className="p-6 overflow-y-auto flex-1">{children}</div>
       </div>
+      {showDiscard && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-[#E5E7EB] w-full max-w-sm p-6">
+            <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Discard Changes?</h3>
+            <p className="text-sm text-[#6B7280] mb-5">You have unsaved changes. Discard them and close?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDiscard(false)}
+                className="flex-1 px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">
+                Keep Editing
+              </button>
+              <button onClick={() => { setShowDiscard(false); onClose(); }}
+                className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition">
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -750,6 +899,12 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 export default function AppealDetailClient({ appeal, clients, teamMembers, clientUsers, mastersByType, canEdit }: Props) {
   const router = useRouter();
   const clientOrg = appeal.client_org ?? null;
+
+  // Refs that capture initial form values for dirty-checking edit modals
+  const editProcInitRef = useRef<ProceedingInput>({});
+  const editEventInitRef = useRef<{ category: string; details: Record<string, string>; description: string; status: string; noticeNumber: string; parentId: string | null }>(
+    { category: "", details: {}, description: "", status: "open", noticeNumber: "", parentId: null }
+  );
 
   // ── Edit Appeal ──
   const [showEditAppeal, setShowEditAppeal] = useState(false);
@@ -809,8 +964,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [editProcError, setEditProcError] = useState<string | null>(null);
 
   function openEditProc(proc: Proceeding) {
-    setEditProc(proc);
-    setEditProcValues({
+    const initValues: ProceedingInput = {
       proceeding_type_id: proc.proceeding_type?.id ?? "",
       authority_type: proc.authority_type ?? "",
       authority_name: proc.authority_name ?? "",
@@ -820,11 +974,14 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       mode: proc.mode ?? "",
       initiated_on: proc.initiated_on ?? "",
       to_be_completed_by: proc.to_be_completed_by ?? "",
-      assigned_to: proc.assigned_to ?? "",
-      client_staff_id: proc.client_staff_id ?? "",
+      assigned_to_ids: proc.assigned_to_ids ?? [],
+      client_staff_ids: proc.client_staff_ids ?? [],
       possible_outcome: proc.possible_outcome ?? "",
       status: proc.status ?? "open",
-    });
+    };
+    editProcInitRef.current = initValues;
+    setEditProc(proc);
+    setEditProcValues(initValues);
     setEditProcError(null);
   }
 
@@ -863,7 +1020,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       if (addProcPendingFiles.length > 0) {
         const supabase = createClient();
         for (const { file, desc } of addProcPendingFiles) {
-          const path = `proceeding-docs/${procId}/${Date.now()}-${file.name}`;
+          const path = `proceeding-docs/${procId}/${Date.now()}-${sanitizeFileName(file.name)}`;
           const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
           if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
           const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
@@ -906,17 +1063,33 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [editEventDescription, setEditEventDescription] = useState("");
   const [editEventStatus, setEditEventStatus] = useState("open");
   const [editEventNoticeNumber, setEditEventNoticeNumber] = useState("");
+  const [editEventParentId, setEditEventParentId] = useState<string | null>(null);
+  const [editEventProceedingId, setEditEventProceedingId] = useState<string>("");
   const [editEventSaving, setEditEventSaving] = useState(false);
   const [editEventError, setEditEventError] = useState<string | null>(null);
 
   function openEditEvent(ev: AppEvent) {
+    const initDetails = ev.details ? { ...ev.details } : {};
+    const procId = (appeal.proceedings ?? []).find(p =>
+      (p.events ?? []).some(e => e.id === ev.id)
+    )?.id ?? "";
+    editEventInitRef.current = {
+      category: ev.category,
+      details: initDetails,
+      description: ev.description ?? "",
+      status: ev.status ?? "open",
+      noticeNumber: ev.event_notice_number ?? "",
+      parentId: ev.parent_event_id ?? null,
+    };
     setEditEvent(ev);
     setEditEventType((ev.event_type as "master" | "sub") ?? "master");
     setEditEventCategory(ev.category);
-    setEditEventDetails(ev.details ? { ...ev.details } : {});
+    setEditEventDetails(initDetails);
     setEditEventDescription(ev.description ?? "");
     setEditEventStatus(ev.status ?? "open");
     setEditEventNoticeNumber(ev.event_notice_number ?? "");
+    setEditEventParentId(ev.parent_event_id ?? null);
+    setEditEventProceedingId(procId);
     setEditEventError(null);
   }
 
@@ -938,6 +1111,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
         proceeding_id: "", // not used in update
         event_type: editEventType,
         category: editEventCategory,
+        parent_event_id: editEventParentId ?? undefined,
         event_date: primaryDate,
         status: editEventStatus,
         event_notice_number: editEventNoticeNumber || undefined,
@@ -1054,7 +1228,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       if (addEventPendingFiles.length > 0) {
         const supabase = createClient();
         for (const { file, desc } of addEventPendingFiles) {
-          const path = `event-docs/${eventId}/${Date.now()}-${file.name}`;
+          const path = `event-docs/${eventId}/${Date.now()}-${sanitizeFileName(file.name)}`;
           const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
           if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
           const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
@@ -1070,6 +1244,43 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
   const proceedingFormChange = (setter: React.Dispatch<React.SetStateAction<ProceedingInput>>) =>
     (field: keyof ProceedingInput, value: string) => setter((prev) => ({ ...prev, [field]: value }));
+  const proceedingMultiChange = (setter: React.Dispatch<React.SetStateAction<ProceedingInput>>) =>
+    (field: keyof ProceedingInput, value: string[]) => setter((prev) => ({ ...prev, [field]: value }));
+
+  // ── ESC for delete confirm dialogs ──
+  useEscHandler(() => setConfirmDeleteProc(null), !!confirmDeleteProc);
+  useEscHandler(() => setConfirmDeleteEvent(null), !!confirmDeleteEvent);
+  useEscHandler(() => { setConfirmDeleteAppeal(false); setDeleteAppealError(null); }, confirmDeleteAppeal);
+
+  // ── isDirty flags for each modal ──
+  const editAppealIsDirty = showEditAppeal && (
+    editClientId !== (clientOrg?.id ?? "") ||
+    editFY !== (appeal.financial_year?.id ?? "") ||
+    editAY !== (appeal.assessment_year?.id ?? "") ||
+    editAct !== (appeal.act_regulation?.id ?? "") ||
+    editAppealStatus !== (appeal.status ?? "open")
+  );
+  const editProcIsDirty = !!editProc &&
+    JSON.stringify(editProcValues) !== JSON.stringify(editProcInitRef.current);
+  const addProcIsDirty = showAddProc && (
+    addProcPendingFiles.length > 0 ||
+    Object.values(addProcValues).some(v => Array.isArray(v) ? v.length > 0 : !!v)
+  );
+  const editEventIsDirty = !!editEvent && (
+    editEventCategory !== editEventInitRef.current.category ||
+    JSON.stringify(editEventDetails) !== JSON.stringify(editEventInitRef.current.details) ||
+    editEventDescription !== editEventInitRef.current.description ||
+    editEventStatus !== editEventInitRef.current.status ||
+    editEventNoticeNumber !== editEventInitRef.current.noticeNumber ||
+    editEventParentId !== editEventInitRef.current.parentId
+  );
+  const addEventIsDirty = !!addEventProcId && (
+    !!eventCategory ||
+    Object.values(eventDetails).some(v => !!v) ||
+    !!eventDescription ||
+    !!eventNoticeNumber ||
+    addEventPendingFiles.length > 0
+  );
 
   const sortedProceedings = [...(appeal.proceedings ?? [])]
     .filter((p) => !(p as any).deleted_at)
@@ -1095,6 +1306,12 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     });
   }
 
+  // Flat lookup of all events by ID — used to resolve parent master event for sub events
+  const allEventsById = (appeal.proceedings ?? []).reduce((acc, p) => {
+    (p.events ?? []).filter(e => !e.deleted_at).forEach(e => { acc[e.id] = e as AppEvent; });
+    return acc;
+  }, {} as Record<string, AppEvent>);
+
   // ── Render ──
   return (
     <div className="space-y-4 max-w-4xl">
@@ -1109,18 +1326,18 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
           <DetailRow label="Status" value={(() => { const s = STATUS_CFG[appeal.status ?? "open"]; return s ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span> : null; })()} />
         </div>
         {canEdit && (
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-0.5 flex-shrink-0">
             <button
               onClick={() => { setEditClientId(clientOrg?.id ?? ""); setEditFY(appeal.financial_year?.id ?? ""); setEditAY(appeal.assessment_year?.id ?? ""); setEditAct(appeal.act_regulation?.id ?? ""); setEditAppealStatus(appeal.status ?? "open"); setAppealError(null); setShowEditAppeal(true); }}
-              className="px-3 py-1.5 text-xs cursor-pointer border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:text-[#1A1A2E] hover:bg-[#F8F9FA] transition"
+              title="Edit Litigation" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#6B7280] hover:text-[#1A1A2E] inline-flex"
             >
-              Edit Litigation
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </button>
             <button
               onClick={() => setConfirmDeleteAppeal(true)}
-              className="px-3 py-1.5 text-xs cursor-pointer border border-red-200 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition"
+              title="Delete Litigation" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-red-400 hover:text-red-600 inline-flex"
             >
-              Delete Litigation
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
           </div>
         )}
@@ -1134,8 +1351,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
           {sortedProceedings.map((proc, idx) => {
             const impCfg = proc.importance ? IMPORTANCE[proc.importance] : null;
             const outCfg = proc.possible_outcome ? OUTCOME[proc.possible_outcome] : null;
-            const au = proc.assigned_user ?? null;
-            const cs = proc.client_staff ?? null;
+            const assignedNames = (proc.assigned_to_ids ?? []).map(id => teamMembers.find(m => m.id === id)).filter(Boolean).map(m => `${m!.first_name} ${m!.last_name}`);
+            const clientStaffNames = (proc.client_staff_ids ?? []).map(id => clientUsers.find(u => u.id === id)).filter(Boolean).map(u => `${u!.first_name} ${u!.last_name}`);
             const sortedEvents = [...(proc.events ?? [])]
               .filter((e) => !e.deleted_at)
               .sort((a, b) => (b.event_date ?? b.created_at).localeCompare(a.event_date ?? a.created_at));
@@ -1175,15 +1392,32 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     </span>
                   )}
 
-                  {/* Badges */}
+                  {/* Badges + actions */}
                   <div className="ml-auto flex items-center gap-2 flex-shrink-0">
                     {impCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${impCfg.cls}`}>{impCfg.label}</span>}
                     {proc.mode && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#F3F4F6] text-[#6B7280] capitalize hidden md:inline-flex">{proc.mode}</span>}
                     {procStatusCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${procStatusCfg.cls}`}>{procStatusCfg.label}</span>}
-                    <span className="text-xs text-[#9CA3AF]">{sortedEvents.length} event{sortedEvents.length !== 1 ? "s" : ""}</span>
-                    {au && <span className="text-xs text-[#6B7280] hidden lg:block">{au.first_name} {au.last_name}</span>}
+                    {assignedNames.length > 0 && <span className="text-xs text-[#6B7280] hidden lg:block">{assignedNames.join(", ")}</span>}
                     {proc.to_be_completed_by && (
                       <span className="text-xs text-[#6B7280] hidden lg:block">Due {fmtDate(proc.to_be_completed_by)}</span>
+                    )}
+                    {/* Attachment count */}
+                    {(() => { const cnt = (proc.proceeding_documents ?? []).filter(d => !d.deleted_at).length; return cnt > 0 ? (
+                      <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280]">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                        {cnt}
+                      </span>
+                    ) : null; })()}
+                    {/* Edit / Delete icons */}
+                    {canEdit && (
+                      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => openEditProc(proc)} title="Edit Proceeding" className="p-1.5 rounded hover:bg-[#D8E3F5] transition-colors text-[#6B7280] hover:text-[#1A1A2E] inline-flex">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button onClick={() => setConfirmDeleteProc(proc)} title="Delete Proceeding" className="p-1.5 rounded hover:bg-[#D8E3F5] transition-colors text-red-400 hover:text-red-600 inline-flex">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1195,25 +1429,13 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     <div className="px-5 py-4 grid grid-cols-3 gap-x-6 gap-y-4 border-b border-[#D1D9E6] bg-[#EBF1F9]">
                       <DetailRow label="Authority" value={[proc.authority_type, proc.authority_name].filter(Boolean).join(" · ")} />
                       <DetailRow label="Jurisdiction" value={[proc.jurisdiction_city, proc.jurisdiction].filter(Boolean).join(", ")} />
-                      <DetailRow label="Assigned To" value={au ? `${au.first_name} ${au.last_name}` : null} />
-                      <DetailRow label="Client Staff" value={cs ? `${cs.first_name} ${cs.last_name}` : null} />
+                      <DetailRow label="Assigned To" value={assignedNames.length > 0 ? assignedNames.join(", ") : null} />
+                      <DetailRow label="Client Staff" value={clientStaffNames.length > 0 ? clientStaffNames.join(", ") : null} />
                       <DetailRow label="Initiated On" value={fmtDate(proc.initiated_on)} />
                       <DetailRow label="Deadline" value={fmtDate(proc.to_be_completed_by)} />
                       <DetailRow label="Possible Outcome" value={outCfg ? (
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${outCfg.cls}`}>{outCfg.label}</span>
                       ) : null} />
-                      {canEdit && (
-                        <div className="col-span-3 flex justify-end gap-2 pt-1">
-                          <button onClick={(e) => { e.stopPropagation(); openEditProc(proc); }}
-                            className="px-3 py-1.5 text-xs border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:text-[#1A1A2E] hover:bg-white transition">
-                            Edit Proceeding
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteProc(proc); }}
-                            className="px-3 py-1.5 text-xs border border-red-200 rounded-lg text-red-600 hover:bg-red-50 transition">
-                            Delete Proceeding
-                          </button>
-                        </div>
-                      )}
                     </div>
 
                     {/* Proceeding Attachments */}
@@ -1275,16 +1497,24 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                               {isSub ? "Sub" : "Master"}
                             </span>
                             <span className="text-xs text-[#1A1A2E] font-medium flex-1 min-w-0 truncate">{EVENT_LABELS[ev.category] ?? ev.category}</span>
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap hidden sm:inline-flex">
-                              <span className="text-xs text-[#9CA3AF]">Notice:</span>
-                              <span className="text-xs text-[#6B7280]">{noticeDate}</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap hidden md:inline-flex">
-                              <span className="text-xs text-[#9CA3AF]">Due:</span>
-                              <span className="text-xs text-[#6B7280]">{dueDate}</span>
-                            </span>
-                            <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
-                            <EventActions ev={ev} />
+                            <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap hidden sm:inline-flex">
+                                <span className="text-xs text-[#9CA3AF]">Notice:</span>
+                                <span className="text-xs text-[#6B7280]">{noticeDate}</span>
+                              </span>
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap hidden md:inline-flex">
+                                <span className="text-xs text-[#9CA3AF]">Due:</span>
+                                <span className="text-xs text-[#6B7280]">{dueDate}</span>
+                              </span>
+                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
+                              {(() => { const cnt = (ev.event_documents ?? []).filter(d => !d.deleted_at).length; return cnt > 0 ? (
+                                <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280] flex-shrink-0">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                  {cnt}
+                                </span>
+                              ) : null; })()}
+                              <EventActions ev={ev} />
+                            </div>
                           </div>
                         );
                       }
@@ -1292,7 +1522,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                       return (
                         <div className="px-5 py-4 bg-[#EBF1F9]">
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Events ({sortedEvents.length})</p>
+                            <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Events ({masterEvents.length})</p>
                             {canEdit && (
                               <button onClick={(e) => { e.stopPropagation(); openAddMasterEvent(proc.id); }}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg transition">
@@ -1332,45 +1562,51 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                       )}
                                       {!hasSubEvents && <span className="w-4 flex-shrink-0" />}
                                       <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 bg-[#EEF2FF] text-[#4A6FA5]">Master</span>
-                                      <span className="text-xs text-[#1A1A2E] font-medium min-w-0 truncate">{EVENT_LABELS[master.category] ?? master.category}</span>
-                                      {master.event_notice_number && (
-                                        <span className="text-xs text-[#6B7280] truncate hidden sm:block">#{master.event_notice_number}</span>
-                                      )}
-                                      {(() => {
-                                        const effectiveCat = master.category;
-                                        const primaryKey = PRIMARY_DATE[effectiveCat];
-                                        const noticeDate = primaryKey && master.details?.[primaryKey] ? fmtDateTime(master.details[primaryKey]) : master.event_date ? fmtDateTime(master.event_date) : "—";
-                                        const dueDateKey = DUE_DATE_KEY[effectiveCat];
-                                        const dueDate = dueDateKey && master.details?.[dueDateKey] ? fmtDateTime(master.details[dueDateKey]) : "—";
-                                        const statusCfg = EVENT_STATUS_CFG[master.status ?? "open"] ?? EVENT_STATUS_CFG.open;
-                                        return (
-                                          <>
-                                            <span className="inline-flex items-center gap-1 whitespace-nowrap hidden sm:inline-flex">
-                                              <span className="text-xs text-[#9CA3AF]">Notice:</span>
-                                              <span className="text-xs text-[#6B7280]">{noticeDate}</span>
-                                            </span>
-                                            <span className="inline-flex items-center gap-1 whitespace-nowrap hidden md:inline-flex">
-                                              <span className="text-xs text-[#9CA3AF]">Due:</span>
-                                              <span className="text-xs text-[#6B7280]">{dueDate}</span>
-                                            </span>
-                                            <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
-                                          </>
-                                        );
-                                      })()}
-                                      <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <button onClick={() => setViewEvent(master)} title="View" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
-                                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                                        </button>
-                                        {canEdit && (
-                                          <>
-                                            <button onClick={() => openEditEvent(master)} title="Edit" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#6B7280] hover:text-[#1A1A2E] inline-flex">
-                                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                            </button>
-                                            <button onClick={() => setConfirmDeleteEvent(master)} title="Delete" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-red-400 hover:text-red-600 inline-flex">
-                                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            </button>
-                                          </>
-                                        )}
+                                      <span className="text-xs text-[#1A1A2E] font-medium flex-1 min-w-0 truncate">{EVENT_LABELS[master.category] ?? master.category}</span>
+                                      <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                                        {(() => {
+                                          const effectiveCat = master.category;
+                                          const primaryKey = PRIMARY_DATE[effectiveCat];
+                                          const noticeDate = primaryKey && master.details?.[primaryKey] ? fmtDateTime(master.details[primaryKey]) : master.event_date ? fmtDateTime(master.event_date) : "—";
+                                          const dueDateKey = DUE_DATE_KEY[effectiveCat];
+                                          const dueDate = dueDateKey && master.details?.[dueDateKey] ? fmtDateTime(master.details[dueDateKey]) : "—";
+                                          const statusCfg = EVENT_STATUS_CFG[master.status ?? "open"] ?? EVENT_STATUS_CFG.open;
+                                          const cnt = (master.event_documents ?? []).filter(d => !d.deleted_at).length;
+                                          return (
+                                            <>
+                                              <span className="inline-flex items-center gap-1 whitespace-nowrap hidden sm:inline-flex">
+                                                <span className="text-xs text-[#9CA3AF]">Notice:</span>
+                                                <span className="text-xs text-[#6B7280]">{noticeDate}</span>
+                                              </span>
+                                              <span className="inline-flex items-center gap-1 whitespace-nowrap hidden md:inline-flex">
+                                                <span className="text-xs text-[#9CA3AF]">Due:</span>
+                                                <span className="text-xs text-[#6B7280]">{dueDate}</span>
+                                              </span>
+                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                              {cnt > 0 && (
+                                                <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280] flex-shrink-0">
+                                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                  {cnt}
+                                                </span>
+                                              )}
+                                            </>
+                                          );
+                                        })()}
+                                        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                          <button onClick={() => setViewEvent(master)} title="View" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                          </button>
+                                          {canEdit && (
+                                            <>
+                                              <button onClick={() => openEditEvent(master)} title="Edit" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#6B7280] hover:text-[#1A1A2E] inline-flex">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                              </button>
+                                              <button onClick={() => setConfirmDeleteEvent(master)} title="Delete" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-red-400 hover:text-red-600 inline-flex">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                              </button>
+                                            </>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
 
@@ -1428,7 +1664,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* ── Edit Appeal Modal ── */}
       {showEditAppeal && (
-        <Modal title="Edit Litigation" onClose={() => setShowEditAppeal(false)}>
+        <Modal title="Edit Litigation" onClose={() => setShowEditAppeal(false)} isDirty={editAppealIsDirty}>
           <form onSubmit={handleSaveAppeal} className="space-y-4">
             <Field label="Client Organisation">
               <select value={editClientId} onChange={(e) => setEditClientId(e.target.value)} className={inp}>
@@ -1475,10 +1711,13 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* ── Edit Proceeding Modal ── */}
       {editProc && (
-        <Modal title="Edit Proceeding" onClose={() => setEditProc(null)}>
+        <Modal title="Edit Proceeding" onClose={() => setEditProc(null)} isDirty={editProcIsDirty}>
           <form onSubmit={handleSaveProc} className="space-y-4">
-            <ProceedingFormFields values={editProcValues} onChange={proceedingFormChange(setEditProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
+            <ProceedingFormFields values={editProcValues} onChange={proceedingFormChange(setEditProcValues)} onMultiChange={proceedingMultiChange(setEditProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
             {editProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{editProcError}</div>}
+            <div className="border-t border-[#E5E7EB] -mx-6 px-6 pt-4">
+              <ProceedingAttachments proceedingId={editProc.id} docs={editProc.proceeding_documents ?? []} canEdit={canEdit} />
+            </div>
             <div className="flex gap-3 justify-end pt-2">
               <button type="button" onClick={() => setEditProc(null)} className="px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
               <button type="submit" disabled={editProcSaving} className="px-4 py-2 text-sm bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium transition disabled:opacity-60">
@@ -1486,17 +1725,14 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               </button>
             </div>
           </form>
-          <div className="border-t border-[#E5E7EB] mt-2">
-            <ProceedingAttachments proceedingId={editProc.id} docs={editProc.proceeding_documents ?? []} canEdit={canEdit} />
-          </div>
         </Modal>
       )}
 
       {/* ── Add Proceeding Modal ── */}
       {showAddProc && (
-        <Modal title="Add Proceeding" onClose={() => { setShowAddProc(false); setAddProcPendingFiles([]); }}>
+        <Modal title="Add Proceeding" onClose={() => { setShowAddProc(false); setAddProcPendingFiles([]); }} isDirty={addProcIsDirty}>
           <form onSubmit={handleAddProc} className="space-y-4">
-            <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
+            <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} onMultiChange={proceedingMultiChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
             {/* Attachments */}
             <div className="border-t border-[#F3F4F6] pt-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -1534,7 +1770,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* ── Quick View Event Modal ── */}
       {viewEvent && (
-        <Modal title={EVENT_LABELS[viewEvent.category] ?? viewEvent.category} onClose={() => setViewEvent(null)}>
+        <Modal title={EVENT_LABELS[viewEvent.category] ?? viewEvent.category} onClose={() => setViewEvent(null)} isDirty={false}>
           <div className="space-y-5">
             {/* Event type, notice number, status */}
             <div className="flex items-center gap-2 flex-wrap">
@@ -1546,6 +1782,29 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               )}
               {(() => { const s = EVENT_STATUS_CFG[viewEvent.status ?? "open"] ?? EVENT_STATUS_CFG.open; return <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.cls}`}>{s.label}</span>; })()}
             </div>
+
+            {/* Inherited from parent master event (sub events only) */}
+            {viewEvent.event_type === "sub" && viewEvent.parent_event_id && (() => {
+              const parent = allEventsById[viewEvent.parent_event_id];
+              if (!parent) return null;
+              const primaryKey = PRIMARY_DATE[parent.category];
+              const parentNoticeDate = primaryKey && parent.details?.[primaryKey] ? fmtDateTime(parent.details[primaryKey]) : parent.event_date ? fmtDateTime(parent.event_date) : null;
+              return (
+                <div className="rounded-lg bg-[#F3F4F6] border border-[#E5E7EB] px-4 py-3 space-y-2">
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-[#9CA3AF] mb-0.5">Notice No.</p>
+                      <p className="text-sm text-[#9CA3AF]">{parent.event_notice_number ? `#${parent.event_notice_number}` : "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[#9CA3AF] mb-0.5">Notice Date</p>
+                      <p className="text-sm text-[#9CA3AF]">{parentNoticeDate ?? "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             {/* Category-specific fields */}
             {CATEGORY_FIELDS[viewEvent.category] && (
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -1601,7 +1860,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* ── Edit Event Modal ── */}
       {editEvent && (
-        <Modal title={`Edit — ${EVENT_LABELS[editEventCategory] ?? editEventCategory}`} onClose={() => setEditEvent(null)}>
+        <Modal title={`Edit — ${EVENT_LABELS[editEventCategory] ?? editEventCategory}`} onClose={() => setEditEvent(null)} isDirty={editEventIsDirty}>
           <form onSubmit={handleSaveEvent} className="space-y-5">
             {/* Category (read-only display, can't change category as it would break field semantics) */}
             <div className="flex items-center gap-2">
@@ -1620,6 +1879,52 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                 <input type="text" value={editEventNoticeNumber} onChange={(e) => setEditEventNoticeNumber(e.target.value)} className={inp} />
               </Field>
             )}
+
+            {/* Parent Master Event selector — sub events only */}
+            {editEventType === "sub" && (() => {
+              const proc = (appeal.proceedings ?? []).find(p => p.id === editEventProceedingId);
+              const masterEvents = (proc?.events ?? []).filter(e => e.event_type === "master" && !e.deleted_at);
+              const selectedParent = editEventParentId ? allEventsById[editEventParentId] : null;
+              const primaryKey = selectedParent ? PRIMARY_DATE[selectedParent.category] : null;
+              const parentNoticeDate = selectedParent && primaryKey && selectedParent.details?.[primaryKey]
+                ? selectedParent.details[primaryKey]
+                : selectedParent?.event_date ?? "";
+              return (
+                <div className="space-y-3">
+                  <Field label="Parent Master Event">
+                    <select
+                      value={editEventParentId ?? ""}
+                      onChange={(e) => setEditEventParentId(e.target.value || null)}
+                      className={inp}
+                    >
+                      <option value="">— None (unlinked) —</option>
+                      {masterEvents.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {EVENT_LABELS[m.category] ?? m.category}
+                          {m.event_notice_number ? ` — #${m.event_notice_number}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {selectedParent && (
+                    <div className="rounded-lg bg-[#F3F4F6] border border-[#E5E7EB] px-4 py-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-[#6B7280] mb-1.5">Notice No.</label>
+                          <input readOnly value={selectedParent.event_notice_number ?? ""} placeholder="—"
+                            className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-[#6B7280] mb-1.5">Notice Date</label>
+                          <input readOnly value={parentNoticeDate ? parentNoticeDate.slice(0, 10) : ""} placeholder="—" type="date"
+                            className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Dynamic category fields */}
             {editEventCategory && CATEGORY_FIELDS[editEventCategory] && (
@@ -1692,6 +1997,10 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
             {editEventError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{editEventError}</div>}
 
+            <div className="border-t border-[#E5E7EB] -mx-6 px-6 pt-4">
+              <EventAttachments eventId={editEvent.id} docs={editEvent.event_documents ?? []} canEdit={canEdit} />
+            </div>
+
             <div className="flex gap-3 justify-end pt-2">
               <button type="button" onClick={() => setEditEvent(null)}
                 className="px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">
@@ -1703,9 +2012,6 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               </button>
             </div>
           </form>
-          <div className="border-t border-[#E5E7EB] mt-2">
-            <EventAttachments eventId={editEvent.id} docs={editEvent.event_documents ?? []} canEdit={canEdit} />
-          </div>
         </Modal>
       )}
 
@@ -1714,6 +2020,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
         <Modal
           title={addEventParentId ? "Add Sub Event" : "Add Master Event"}
           onClose={() => { setAddEventProcId(null); setAddEventParentId(null); setAddEventPendingFiles([]); }}
+          isDirty={addEventIsDirty}
         >
           <form onSubmit={handleAddEvent} className="space-y-4">
             {/* Type badge (read-only) */}
@@ -1721,10 +2028,32 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${addEventParentId ? "bg-purple-50 text-purple-700" : "bg-[#EEF2FF] text-[#4A6FA5]"}`}>
                 {addEventParentId ? "Sub Event" : "Master Event"}
               </span>
-              {addEventParentId && (
-                <span className="text-xs text-[#9CA3AF]">linked to master event</span>
-              )}
             </div>
+
+            {/* Inherited from parent master event (sub events only) */}
+            {addEventParentId && (() => {
+              const parent = allEventsById[addEventParentId];
+              if (!parent) return null;
+              const primaryKey = PRIMARY_DATE[parent.category];
+              const parentNoticeDate = primaryKey && parent.details?.[primaryKey] ? parent.details[primaryKey] : parent.event_date ?? "";
+              return (
+                <div className="rounded-lg bg-[#F3F4F6] border border-[#E5E7EB] px-4 py-3 space-y-3">
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#6B7280] mb-1.5">Notice No.</label>
+                      <input readOnly value={parent.event_notice_number ?? ""} placeholder="—"
+                        className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[#6B7280] mb-1.5">Notice Date</label>
+                      <input readOnly value={parentNoticeDate ? parentNoticeDate.slice(0, 10) : ""} placeholder="—" type="date"
+                        className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Category */}
             <Field label="Category *">

@@ -23,8 +23,8 @@ export interface ProceedingInput {
   mode?: string;
   initiated_on?: string;
   to_be_completed_by?: string;
-  assigned_to?: string;
-  client_staff_id?: string;
+  assigned_to_ids?: string[];
+  client_staff_ids?: string[];
   possible_outcome?: string;
   status?: string;
 }
@@ -56,14 +56,16 @@ function cleanProceeding(proc: ProceedingInput) {
     mode: (proc.mode as "online" | "offline") || null,
     initiated_on: proc.initiated_on || null,
     to_be_completed_by: proc.to_be_completed_by || null,
-    assigned_to: proc.assigned_to || null,
-    client_staff_id: proc.client_staff_id || null,
+    assigned_to: proc.assigned_to_ids?.[0] || null,
+    client_staff_id: proc.client_staff_ids?.[0] || null,
+    assigned_to_ids: proc.assigned_to_ids ?? [],
+    client_staff_ids: proc.client_staff_ids ?? [],
     possible_outcome: (proc.possible_outcome as "favourable" | "doubtful" | "unfavourable") || null,
     status: proc.status || "open",
   };
 }
 
-export async function createAppeal(appeal: AppealInput, proceeding: ProceedingInput): Promise<string> {
+export async function createAppeal(appeal: AppealInput, proceeding: ProceedingInput): Promise<{ appealId: string; proceedingId: string }> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
@@ -86,18 +88,18 @@ export async function createAppeal(appeal: AppealInput, proceeding: ProceedingIn
 
   if (aErr || !newAppeal) throw new Error(aErr?.message ?? "Failed to create appeal");
 
-  const { error: pErr } = await supabase.from("proceedings").insert({
+  const { data: newProceeding, error: pErr } = await supabase.from("proceedings").insert({
     appeal_id: newAppeal.id,
     service_provider_id: spId,
     ...cleanProceeding(proceeding),
-  });
+  }).select("id").single();
 
-  if (pErr) throw new Error(pErr.message);
+  if (pErr || !newProceeding) throw new Error(pErr?.message ?? "Failed to create proceeding");
 
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "appeal", entityLabel: newAppeal.id });
 
   revalidatePath("/litigations");
-  return newAppeal.id;
+  return { appealId: newAppeal.id, proceedingId: newProceeding.id };
 }
 
 export async function updateAppeal(appealId: string, appeal: AppealInput): Promise<void> {
@@ -188,6 +190,7 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<v
       category: input.category,
       event_date: primaryDate,
       event_type: input.event_type || "master",
+      parent_event_id: input.parent_event_id ?? null,
       status: input.status || "open",
       event_notice_number: input.event_notice_number || null,
       description: input.description || null,
@@ -326,14 +329,14 @@ export async function uploadProceedingDocument(
   fileUrl: string,
   fileSize: number,
   description?: string,
-): Promise<void> {
+): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const { error } = await supabase.from("proceeding_documents").insert({
+  const { data, error } = await supabase.from("proceeding_documents").insert({
     proceeding_id: proceedingId,
     service_provider_id: spId,
     file_name: fileName,
@@ -341,10 +344,11 @@ export async function uploadProceedingDocument(
     file_size: fileSize,
     uploaded_by: user.id,
     description: description || null,
-  });
+  }).select("id").single();
 
   if (error) throw new Error(error.message);
   revalidatePath("/litigations");
+  return data.id;
 }
 
 export async function deleteProceedingDocument(docId: string): Promise<void> {
@@ -370,14 +374,14 @@ export async function uploadEventDocument(
   fileUrl: string,
   fileSize: number,
   description?: string,
-): Promise<void> {
+): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const { error } = await supabase.from("event_documents").insert({
+  const { data, error } = await supabase.from("event_documents").insert({
     event_id: eventId,
     service_provider_id: spId,
     file_name: fileName,
@@ -385,10 +389,11 @@ export async function uploadEventDocument(
     file_size: fileSize,
     uploaded_by: user.id,
     description: description || null,
-  });
+  }).select("id").single();
 
   if (error) throw new Error(error.message);
   revalidatePath("/litigations");
+  return data.id;
 }
 
 export async function deleteEventDocument(docId: string): Promise<void> {

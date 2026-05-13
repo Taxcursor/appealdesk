@@ -22,10 +22,8 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
         id, authority_type, authority_name, deleted_at,
         proceeding_type:master_records!proceeding_type_id(id, name),
         jurisdiction, jurisdiction_city, importance, mode, status,
-        initiated_on, to_be_completed_by, assigned_to, client_staff_id,
+        initiated_on, to_be_completed_by, assigned_to_ids, client_staff_ids,
         possible_outcome, is_active, created_at,
-        assigned_user:users!assigned_to(first_name, last_name),
-        client_staff:users!client_staff_id(first_name, last_name),
         events(
           id, event_type, category, parent_event_id, event_date, status, event_notice_number, description, details, created_at, deleted_at,
           event_documents(id, file_name, file_url, file_size, description, created_at, deleted_at)

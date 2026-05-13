@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createAppeal, AppealInput, ProceedingInput } from "@/app/(sp)/litigations/actions";
+import { createAppeal, uploadProceedingDocument, AppealInput, ProceedingInput } from "@/app/(sp)/litigations/actions";
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+import { createClient } from "@/lib/supabase/client";
 
 /** Derives AY name from FY name: "2020-21" → "2021-22" */
 function deriveAYName(fyName: string): string {
@@ -41,6 +46,60 @@ interface Props {
 
 const inp = "w-full px-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]";
 
+function MultiSelect({ options, selected, onChange, placeholder, disabled }: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (vals: string[]) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  function toggle(value: string) {
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+  }
+  const selectedLabels = options.filter(o => selected.includes(o.value)).map(o => o.label);
+  return (
+    <div className="relative">
+      <div
+        onClick={() => !disabled && setOpen(o => !o)}
+        className={`${inp} flex items-center justify-between gap-2 min-h-[42px] flex-wrap ${disabled ? "opacity-50 cursor-not-allowed bg-[#F3F4F6]" : "cursor-pointer"}`}
+      >
+        {selectedLabels.length === 0 ? (
+          <span className="text-[#9CA3AF] text-sm">{placeholder ?? "Select…"}</span>
+        ) : (
+          <div className="flex flex-wrap gap-1 flex-1">
+            {selectedLabels.map((label, i) => (
+              <span key={i} className="inline-flex px-2 py-0.5 bg-[#EEF2FF] text-[#4A6FA5] rounded text-xs font-medium">{label}</span>
+            ))}
+          </div>
+        )}
+        <svg className={`w-4 h-4 flex-shrink-0 text-[#6B7280] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+      {open && !disabled && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            {options.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-[#9CA3AF]">No options available</div>
+            ) : options.map(opt => (
+              <div key={opt.value} onClick={() => toggle(opt.value)} className="flex items-center gap-2 px-3 py-2 hover:bg-[#F3F4F6] cursor-pointer">
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected.includes(opt.value) ? "bg-[#1E3A5F] border-[#1E3A5F]" : "border-[#D1D5DB]"}`}>
+                  {selected.includes(opt.value) && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                  )}
+                </div>
+                <span className="text-sm text-[#1A1A2E]">{opt.label}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
@@ -71,13 +130,21 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
   const [mode, setMode] = useState("");
   const [initiatedOn, setInitiatedOn] = useState("");
   const [toBeCompletedBy, setToBeCompletedBy] = useState("");
-  const [assignedTo, setAssignedTo] = useState("");
-  const [clientStaff, setClientStaff] = useState("");
+  const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
+  const [clientStaffIds, setClientStaffIds] = useState<string[]>([]);
   const [possibleOutcome, setPossibleOutcome] = useState("");
   const [proceedingStatus, setProceedingStatus] = useState("open");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; desc: string }[]>([]);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setPendingFiles((prev) => [...prev, ...files.map((f) => ({ file: f, desc: "" }))]);
+    e.target.value = "";
+  }
 
   // Derive selected act name
   const selectedAct = (mastersByType["act_regulation"] ?? []).find(m => m.id === actRegulationId);
@@ -138,13 +205,23 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
         mode,
         initiated_on: initiatedOn,
         to_be_completed_by: toBeCompletedBy,
-        assigned_to: assignedTo,
-        client_staff_id: clientStaff,
+        assigned_to_ids: assignedToIds,
+        client_staff_ids: clientStaffIds,
         possible_outcome: possibleOutcome,
         status: proceedingStatus,
       };
-      const id = await createAppeal(appeal, proc);
-      router.push(`/litigations/${id}`);
+      const { appealId, proceedingId } = await createAppeal(appeal, proc);
+      if (pendingFiles.length > 0) {
+        const supabase = createClient();
+        for (const { file, desc } of pendingFiles) {
+          const path = `proceeding-docs/${proceedingId}/${Date.now()}-${sanitizeFileName(file.name)}`;
+          const { data, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: true });
+          if (upErr || !data) throw new Error(`"${file.name}": ${upErr?.message ?? "Upload failed"}`);
+          const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(data.path);
+          await uploadProceedingDocument(proceedingId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
+        }
+      }
+      router.push(`/litigations/${appealId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create litigation.");
       setSaving(false);
@@ -243,18 +320,21 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
             <input type="date" value={toBeCompletedBy} onChange={(e) => setToBeCompletedBy(e.target.value)} className={inp} />
           </Field>
           <Field label="Assigned To">
-            <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={inp}>
-              <option value="">Unassigned</option>
-              {[...teamMembers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map((m) => <option key={m.id} value={m.id}>{m.first_name} {m.last_name}</option>)}
-            </select>
+            <MultiSelect
+              options={[...teamMembers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map(m => ({ value: m.id, label: `${m.first_name} ${m.last_name}` }))}
+              selected={assignedToIds}
+              onChange={setAssignedToIds}
+              placeholder="Unassigned"
+            />
           </Field>
           <Field label="Client Staff">
-            <select value={clientStaff} onChange={(e) => setClientStaff(e.target.value)} className={inp} disabled={!clientOrgId}>
-              <option value="">{clientOrgId ? "Select client contact…" : "Select client first"}</option>
-              {[...(clientUsersByOrg[clientOrgId] ?? [])].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map((u) => (
-                <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
-              ))}
-            </select>
+            <MultiSelect
+              options={[...(clientUsersByOrg[clientOrgId] ?? [])].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map(u => ({ value: u.id, label: `${u.first_name} ${u.last_name}` }))}
+              selected={clientStaffIds}
+              onChange={setClientStaffIds}
+              placeholder={clientOrgId ? "None" : "Select client first"}
+              disabled={!clientOrgId}
+            />
           </Field>
           <Field label="Possible Outcome">
             <select value={possibleOutcome} onChange={(e) => setPossibleOutcome(e.target.value)} className={inp}>
@@ -271,6 +351,47 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
               <option value="closed">Closed</option>
             </select>
           </Field>
+        </div>
+
+        {/* Attachments */}
+        <div className="border-t border-[#E5E7EB] mt-4 pt-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-[#6B7280]">Attachments (optional)</span>
+            <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-[#F8F9FA] transition">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Choose Files
+              <input type="file" multiple className="hidden" onChange={handleFileSelect} />
+            </label>
+          </div>
+          {pendingFiles.length === 0 && (
+            <p className="text-xs text-[#9CA3AF]">No files selected. Use Choose Files to attach documents to this proceeding.</p>
+          )}
+          {pendingFiles.map(({ file, desc }, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-xs text-[#1A1A2E] font-medium truncate w-40 flex-shrink-0">{file.name}</span>
+              <input
+                type="text"
+                placeholder="Description (optional)"
+                value={desc}
+                onChange={(e) => setPendingFiles((prev) => prev.map((p, i) => i === idx ? { ...p, desc: e.target.value } : p))}
+                className="flex-1 px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F]"
+              />
+              <button
+                type="button"
+                onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                className="p-1 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
         </div>
       </section>
 

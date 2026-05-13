@@ -12,10 +12,9 @@ interface Proceeding {
   importance: string | null;
   status: string | null;
   to_be_completed_by: string | null;
-  assigned_to: string | null;
+  assigned_to_ids: string[] | null;
   possible_outcome: string | null;
   is_active: boolean;
-  assigned_user: { first_name: string; last_name: string } | null;
 }
 
 interface Appeal {
@@ -246,13 +245,12 @@ export default function AppealsClient({
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">Deadline</th>
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">Outcome</th>
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">Status</th>
-                <th className="px-4 py-3 w-16"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5E7EB]">
               {appeals.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-16 text-center text-[#6B7280]">
+                  <td colSpan={9} className="px-4 py-16 text-center text-[#6B7280]">
                     {hasFilters
                       ? "No litigations match your filters."
                       : canEdit
@@ -265,9 +263,12 @@ export default function AppealsClient({
                   const proc = activeProceeding(appeal.proceedings);
                   const impCfg = proc?.importance ? IMPORTANCE[proc.importance] : null;
                   const outCfg = proc?.possible_outcome ? OUTCOME[proc.possible_outcome] : null;
-                  const au = proc?.assigned_user ?? null;
+                  const assignedNames = (proc?.assigned_to_ids ?? [])
+                    .map(id => teamMembers.find(m => m.id === id))
+                    .filter(Boolean)
+                    .map(m => `${m!.first_name} ${m!.last_name}`);
                   return (
-                    <tr key={appeal.id} className="hover:bg-[#F8F9FA] transition-colors">
+                    <tr key={appeal.id} className="hover:bg-[#F8F9FA] transition-colors cursor-pointer" onClick={() => router.push(`/litigations/${appeal.id}`)}>
                       <td className="px-4 py-3 text-[#9CA3AF] text-xs">{rowOffset + i + 1}</td>
                       <td className="px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap max-w-[180px] truncate">
                         {appeal.client_org?.name ?? "—"}
@@ -289,7 +290,7 @@ export default function AppealsClient({
                         ) : <span className="text-[#9CA3AF]">—</span>}
                       </td>
                       <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap">
-                        {au ? `${au.first_name} ${au.last_name}` : <span className="text-[#9CA3AF]">—</span>}
+                        {assignedNames.length > 0 ? assignedNames.join(", ") : <span className="text-[#9CA3AF]">—</span>}
                       </td>
                       <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap">
                         {fmtDate(proc?.to_be_completed_by ?? null)}
@@ -308,11 +309,6 @@ export default function AppealsClient({
                             ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span>
                             : <span className="text-[#9CA3AF]">—</span>;
                         })()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/litigations/${appeal.id}`} title="View litigation" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                        </Link>
                       </td>
                     </tr>
                   );
