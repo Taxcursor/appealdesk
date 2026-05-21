@@ -940,6 +940,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const editActName = editActObj?.name;
   const editIsITAct1961 = editActName === "The Income-tax Act, 1961";
   const editIsITAct2025 = editActName === "The Income-tax Act, 2025";
+  const editHideAY = !!(editActName?.includes("Income-tax Act, 2025") || editActName?.toLowerCase().includes("central goods"));
+  const detailHideAY = !!(appeal.act_regulation?.name?.includes("Income-tax Act, 2025") || appeal.act_regulation?.name?.toLowerCase().includes("central goods"));
   const editFYObj = (mastersByType["financial_year"] ?? []).find(m => m.id === editFY);
   const editFYName = editFYObj?.name ?? "";
   const editAYDisabled = !editIsITAct1961 || (editFYName ? isAYDisabled(editFYName) : false);
@@ -1347,10 +1349,10 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* Appeal Header */}
       <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm flex items-start justify-between gap-4">
-        <div className="grid grid-cols-5 gap-6 flex-1">
+        <div className={`grid ${detailHideAY ? "grid-cols-4" : "grid-cols-5"} gap-6 flex-1`}>
           <DetailRow label="Client" value={<span className="font-medium">{clientOrg?.name}</span>} />
           <DetailRow label="Financial Year" value={appeal.financial_year?.name} />
-          <DetailRow label="Assessment Year" value={appeal.assessment_year?.name} />
+          {!detailHideAY && <DetailRow label="Assessment Year" value={appeal.assessment_year?.name} />}
           <DetailRow label="Act / Regulation" value={appeal.act_regulation?.name} />
           <DetailRow label="Status" value={(() => { const s = STATUS_CFG[appeal.status ?? "open"]; return s ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span> : null; })()} />
         </div>
@@ -1384,7 +1386,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
             const clientStaffNames = (proc.client_staff_ids ?? []).map(id => clientUsers.find(u => u.id === id)).filter(Boolean).map(u => `${u!.first_name} ${u!.last_name}`);
             const sortedEvents = [...(proc.events ?? [])]
               .filter((e) => !e.deleted_at)
-              .sort((a, b) => (b.event_date ?? b.created_at).localeCompare(a.event_date ?? a.created_at));
+              .sort((a, b) => (a.event_date ?? a.created_at).localeCompare(b.event_date ?? b.created_at));
             const procStatusCfg = STATUS_CFG[proc.status ?? "open"];
             const isExpanded = expandedProcs.has(proc.id);
 
@@ -1724,17 +1726,19 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                   {[...(mastersByType["act_regulation"] ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               </Field>
-              <Field label={editIsITAct2025 ? "Tax Year" : "Financial Year / Tax Year"}>
+              <Field label={editIsITAct2025 ? "Tax Year" : "Financial Year / Tax Year"} fullWidth={editHideAY}>
                 <select value={editFY} onChange={(e) => handleEditFYChange(e.target.value)} className={inp} disabled={!editAct}>
                   <option value="">{editAct ? "Select…" : "Select Act first"}</option>
                   {[...editAvailableFY].sort((a, b) => b.name.localeCompare(a.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               </Field>
-              <Field label="Assessment Year">
-                <div className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#6B7280] cursor-not-allowed">
-                  {editAYName}
-                </div>
-              </Field>
+              {!editHideAY && (
+                <Field label="Assessment Year">
+                  <div className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#6B7280] cursor-not-allowed">
+                    {editAYName}
+                  </div>
+                </Field>
+              )}
               <Field label="Status">
                 <select value={editAppealStatus} onChange={(e) => setEditAppealStatus(e.target.value)} className={inp}>
                   <option value="open">Open</option>
@@ -1932,7 +1936,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               const proc = (appeal.proceedings ?? []).find(p => p.id === editEventProceedingId);
               const mainEvents = [...(proc?.events ?? [])]
                 .filter(e => e.event_type === "main" && !e.deleted_at)
-                .sort((a, b) => (b.event_date ?? b.created_at).localeCompare(a.event_date ?? a.created_at));
+                .sort((a, b) => (a.event_date ?? a.created_at).localeCompare(b.event_date ?? b.created_at));
               const selectedParent = editEventParentId ? allEventsById[editEventParentId] : null;
               const parentDateField = selectedParent ? PARENT_DATE_FIELD[selectedParent.category] : null;
               const parentDateKey = parentDateField?.key ?? null;

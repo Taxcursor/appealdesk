@@ -11,6 +11,7 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   roles: UserRole[];
+  disabled?: boolean;
 }
 
 const platformNav: NavItem[] = [
@@ -162,6 +163,7 @@ const spNav: NavItem[] = [
     label: "Recycle Bin",
     href: "/trash",
     roles: ["sp_admin"],
+    disabled: true,
     icon: (
       <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -311,6 +313,22 @@ export default function Sidebar({ userName, userRole, isPlatform = false, orgNam
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto overflow-x-hidden">
         {visibleItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+          if (item.disabled) {
+            return (
+              <div
+                key={item.href}
+                title={collapsed ? item.label : undefined}
+                className={`flex items-center gap-3 rounded-lg text-sm font-medium cursor-not-allowed opacity-35 ${
+                  collapsed ? "px-0 py-2.5 justify-center" : "px-3 py-2.5"
+                } text-white/65`}
+              >
+                {item.icon}
+                {!collapsed && (
+                  <span className="whitespace-nowrap overflow-hidden">{item.label}</span>
+                )}
+              </div>
+            );
+          }
           return (
             <Link
               key={item.href}

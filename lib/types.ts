@@ -30,6 +30,9 @@ export type ProceedingMode = "online" | "offline";
 
 export type EventCategory =
   | "notice_from_authority"
+  | "show_cause_notice"
+  | "personal_hearing_notice"
+  | "virtual_hearing_notice"
   | "response_to_notice"
   | "adjournment_request"
   | "personal_hearing"
@@ -37,7 +40,9 @@ export type EventCategory =
   | "personal_follow_up"
   | "assessment_order"
   | "notice_of_penalty"
-  | "penalty_order";
+  | "penalty_order"
+  | "filing_of_appeal"
+  | "others";
 
 export type NoticeStatus = "open" | "in_progress" | "closed";
 

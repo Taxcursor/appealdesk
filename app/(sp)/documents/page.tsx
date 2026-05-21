@@ -7,7 +7,7 @@ export default async function DocumentsPage() {
   const supabase = await createClient();
   const spId = user?.service_provider_id ?? user?.org_id;
 
-  const [{ data: forms }, { data: templates }] = await Promise.all([
+  const [{ data: forms }, { data: templates }, { data: resources }, { data: acts }] = await Promise.all([
     supabase
       .from("forms")
       .select("*")
@@ -19,6 +19,21 @@ export default async function DocumentsPage() {
       .select("*")
       .eq("service_provider_id", spId!)
       .order("created_at", { ascending: true }),
+
+    supabase
+      .from("resources")
+      .select("*, resource_files(*), act:master_records!act_id(id, name)")
+      .eq("service_provider_id", spId!)
+      .order("created_at", { ascending: true }),
+
+    supabase
+      .from("master_records")
+      .select("id, name")
+      .eq("type", "act_regulation")
+      .eq("level", "platform")
+      .eq("is_active", true)
+      .is("deleted_at", null)
+      .order("sort_order"),
   ]);
 
   const canEdit = user?.role === "sp_admin" || user?.role === "sp_staff";
@@ -28,6 +43,8 @@ export default async function DocumentsPage() {
       <DocumentsClient
         forms={(forms ?? []) as any}
         templates={(templates ?? []) as any}
+        resources={(resources ?? []) as any}
+        acts={(acts ?? []) as any}
         canEdit={canEdit}
       />
     </div>

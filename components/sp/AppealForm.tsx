@@ -151,6 +151,7 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
   const actName = selectedAct?.name;
   const isITAct1961 = actName === "The Income-tax Act, 1961";
   const isITAct2025 = actName === "The Income-tax Act, 2025";
+  const hideAY = !!(actName?.includes("Income-tax Act, 2025") || actName?.toLowerCase().includes("central goods"));
 
   // AY only available for IT Act 1961, and only for FY up to 2025-26
   const selectedFY = (mastersByType["financial_year"] ?? []).find(m => m.id === financialYearId);
@@ -250,19 +251,23 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
               </select>
             </Field>
           </div>
-          <Field label={isITAct2025 ? "Tax Year" : "Financial Year / Tax Year"}>
-            <select value={financialYearId} onChange={(e) => handleFYChange(e.target.value)} className={inp} disabled={!actRegulationId}>
-              <option value="">{actRegulationId ? "Select…" : "Select Act first"}</option>
-              {[...availableFYOptions].sort((a, b) => b.name.localeCompare(a.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Assessment Year">
-            <div className={`w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#6B7280] cursor-not-allowed`}>
-              {ayDisabled
-                ? "Not applicable"
-                : (mastersByType["assessment_year"] ?? []).find(m => m.id === assessmentYearId)?.name ?? "—"}
-            </div>
-          </Field>
+          <div className={hideAY ? "col-span-2" : ""}>
+            <Field label={isITAct2025 ? "Tax Year" : "Financial Year / Tax Year"}>
+              <select value={financialYearId} onChange={(e) => handleFYChange(e.target.value)} className={inp} disabled={!actRegulationId}>
+                <option value="">{actRegulationId ? "Select…" : "Select Act first"}</option>
+                {[...availableFYOptions].sort((a, b) => b.name.localeCompare(a.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          {!hideAY && (
+            <Field label="Assessment Year">
+              <div className="w-full px-3 py-2 text-sm border-2 rounded-lg bg-[#F3F4F6] border-[#E5E7EB] text-[#6B7280] cursor-not-allowed">
+                {ayDisabled
+                  ? "Not applicable"
+                  : (mastersByType["assessment_year"] ?? []).find(m => m.id === assessmentYearId)?.name ?? "—"}
+              </div>
+            </Field>
+          )}
           <Field label="Status">
             <select value={appealStatus} onChange={(e) => setAppealStatus(e.target.value)} className={inp}>
               <option value="open">Open</option>

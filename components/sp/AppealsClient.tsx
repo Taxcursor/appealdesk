@@ -463,7 +463,8 @@ export default function AppealsClient({
               <tr className="border-b-2 border-[#B0BDD0] bg-[#D1D9E6]">
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] w-10">#</th>
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">Client</th>
-                <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">FY / AY</th>
+                <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">FY</th>
+                <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">AY</th>
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">Act</th>
                 <th className="text-left px-4 py-3 font-medium text-[#1A1A2E] whitespace-nowrap">Status</th>
               </tr>
@@ -471,7 +472,7 @@ export default function AppealsClient({
             <tbody className="divide-y divide-[#E5E7EB]">
               {appeals.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-16 text-center text-[#6B7280]">
+                  <td colSpan={6} className="px-4 py-16 text-center text-[#6B7280]">
                     {hasFilters
                       ? "No litigations match your filters."
                       : canEdit
@@ -491,12 +492,10 @@ export default function AppealsClient({
                       {appeal.client_org?.name ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap text-xs">
-                      {appeal.financial_year?.name && <span>{appeal.financial_year.name}</span>}
-                      {appeal.financial_year?.name && appeal.assessment_year?.name && (
-                        <span className="text-[#D1D5DB]"> / </span>
-                      )}
-                      {appeal.assessment_year?.name && <span>{appeal.assessment_year.name}</span>}
-                      {!appeal.financial_year?.name && !appeal.assessment_year?.name && "—"}
+                      {appeal.financial_year?.name ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap text-xs">
+                      {appeal.assessment_year?.name ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap max-w-[140px] truncate">
                       {appeal.act_regulation?.name ?? "—"}

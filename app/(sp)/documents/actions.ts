@@ -53,6 +53,9 @@ export interface FormInput {
   page_no?: string;
   parallel_rule_1962?: string;
   url?: string;
+  file_name?: string;
+  file_url?: string;
+  file_size?: number;
 }
 
 export async function createForm(input: FormInput) {
@@ -79,6 +82,9 @@ export async function createForm(input: FormInput) {
     page_no: input.page_no || null,
     parallel_rule_1962: input.parallel_rule_1962 || null,
     url: input.url || null,
+    file_name: input.file_name || null,
+    file_url: input.file_url || null,
+    file_size: input.file_size || null,
     sort_order: nextOrder,
   });
 
@@ -93,7 +99,7 @@ export async function updateForm(id: string, input: FormInput) {
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const { error } = await supabase.from("forms").update({
+  const updatePayload: Record<string, unknown> = {
     rule_no: input.rule_no || null,
     rule_heading: input.rule_heading,
     form_no: input.form_no || null,
@@ -101,7 +107,14 @@ export async function updateForm(id: string, input: FormInput) {
     parallel_rule_1962: input.parallel_rule_1962 || null,
     url: input.url || null,
     updated_at: new Date().toISOString(),
-  }).eq("id", id).eq("service_provider_id", spId!);
+  };
+  if (input.file_url !== undefined) {
+    updatePayload.file_name = input.file_name || null;
+    updatePayload.file_url = input.file_url || null;
+    updatePayload.file_size = input.file_size || null;
+  }
+
+  const { error } = await supabase.from("forms").update(updatePayload).eq("id", id).eq("service_provider_id", spId!);
 
   if (error) throw new Error(error.message);
   revalidatePath("/documents");
@@ -115,6 +128,18 @@ export async function deleteForm(id: string) {
   const supabase = await createServiceClient();
 
   await supabase.from("forms").delete().eq("id", id).eq("service_provider_id", spId!);
+  revalidatePath("/documents");
+}
+
+export async function removeFormFile(id: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  const { error } = await supabase.from("forms").update({ file_name: null, file_url: null, file_size: null }).eq("id", id).eq("service_provider_id", spId!);
+  if (error) throw new Error(error.message);
   revalidatePath("/documents");
 }
 
@@ -174,5 +199,97 @@ export async function deleteTemplate(id: string) {
   const supabase = await createServiceClient();
 
   await supabase.from("templates").delete().eq("id", id).eq("service_provider_id", spId!);
+  revalidatePath("/documents");
+}
+
+// ── RESOURCES ──────────────────────────────────────────
+
+export interface ResourceInput {
+  act_id: string;
+  section?: string;
+  rule?: string;
+  description: string;
+  author?: string;
+}
+
+export async function createResource(input: ResourceInput): Promise<string> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  const { data, error } = await supabase.from("resources").insert({
+    service_provider_id: spId,
+    act_id: input.act_id,
+    section: input.section || null,
+    rule: input.rule || null,
+    description: input.description,
+    author: input.author || null,
+    created_by: user.id,
+  }).select("id").single();
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/documents");
+  return data.id;
+}
+
+export async function updateResource(id: string, input: ResourceInput) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  const { error } = await supabase.from("resources").update({
+    act_id: input.act_id,
+    section: input.section || null,
+    rule: input.rule || null,
+    description: input.description,
+    author: input.author || null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", id).eq("service_provider_id", spId!);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/documents");
+}
+
+export async function deleteResource(id: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  await supabase.from("resources").delete().eq("id", id).eq("service_provider_id", spId!);
+  revalidatePath("/documents");
+}
+
+export async function addResourceFile(resourceId: string, fileName: string, fileUrl: string, fileType?: string, fileSize?: number) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const supabase = await createServiceClient();
+
+  const { error } = await supabase.from("resource_files").insert({
+    resource_id: resourceId,
+    file_name: fileName,
+    file_url: fileUrl,
+    file_type: fileType || null,
+    file_size: fileSize || null,
+  });
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/documents");
+}
+
+export async function deleteResourceFile(fileId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const supabase = await createServiceClient();
+
+  const { error } = await supabase.from("resource_files").delete().eq("id", fileId);
+  if (error) throw new Error(error.message);
   revalidatePath("/documents");
 }
