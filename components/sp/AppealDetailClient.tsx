@@ -12,9 +12,14 @@ function sanitizeFileName(name: string): string {
 
 // ── ESC handler stack ─────────────────────────────────────────────
 // Last-registered handler wins — inner dialogs intercept ESC before outer modals.
+declare global {
+  interface Window {
+    __escListenerRegistered?: boolean;
+  }
+}
 const _escStack: Array<() => void> = [];
-if (typeof window !== "undefined" && !(window as any).__escListenerRegistered) {
-  (window as any).__escListenerRegistered = true;
+if (typeof window !== "undefined" && !window.__escListenerRegistered) {
+  window.__escListenerRegistered = true;
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Escape" && _escStack.length > 0) _escStack[_escStack.length - 1]();
   }, true);
@@ -27,7 +32,7 @@ function useEscHandler(handler: () => void, active: boolean) {
     const fn = () => handlerRef.current();
     _escStack.push(fn);
     return () => { const i = _escStack.indexOf(fn); if (i !== -1) _escStack.splice(i, 1); };
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active]);
 }
 
 import {
@@ -35,8 +40,9 @@ import {
   deleteEvent, deleteAppeal, deleteProceeding,
   uploadProceedingDocument, deleteProceedingDocument,
   uploadEventDocument, deleteEventDocument,
-  AppealInput, ProceedingInput, EventInput,
+  ProceedingInput, EventInput,
 } from "@/app/(sp)/litigations/actions";
+import { PendingAttachments } from "@/components/sp/PendingAttachments";
 
 // ─── AY helpers (mirrors AppealForm.tsx) ─────────────────────────
 function deriveAYName(fyName: string): string {
@@ -103,6 +109,7 @@ interface Proceeding {
   status: string | null;
   is_active: boolean;
   created_at: string;
+  deleted_at?: string | null;
   events: AppEvent[];
   proceeding_documents?: AttachedFile[];
 }
@@ -346,7 +353,7 @@ function DateTimeField({ value, onChange, className }: { value: string; onChange
         type="time"
         value={timePart}
         onChange={(e) => handleTimeChange(e.target.value)}
-        className="px-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] w-32 flex-shrink-0"
+        className="px-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] w-32 shrink-0"
       />
     </div>
   );
@@ -366,18 +373,18 @@ function AttachmentRow({ doc, onDelete, canEdit }: { doc: AttachedFile; onDelete
   return (
     <div className="px-4 py-2.5 flex items-start justify-between gap-3">
       <div className="flex items-start gap-2 min-w-0">
-        <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg className="w-3.5 h-3.5 text-[#4A6FA5] shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-[#1A1A2E] truncate">{doc.file_name}</span>
-            {doc.file_size && <span className="text-xs text-[#9CA3AF] flex-shrink-0">{(doc.file_size / 1024).toFixed(0)} KB</span>}
+            {doc.file_size && <span className="text-xs text-[#9CA3AF] shrink-0">{(doc.file_size / 1024).toFixed(0)} KB</span>}
           </div>
           {doc.description && <p className="text-xs text-[#6B7280] mt-0.5">{doc.description}</p>}
         </div>
       </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
+      <div className="flex items-center gap-0.5 shrink-0">
         <a href={doc.file_url} target="_blank" rel="noopener noreferrer" title="View file"
           className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
@@ -514,10 +521,10 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
             {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-1.5">{error}</div>}
             {pendingFiles.map(({ file, desc }, idx) => (
               <div key={idx} className="flex items-center gap-3">
-                <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-3.5 h-3.5 text-[#4A6FA5] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <span className="text-xs text-[#1A1A2E] font-medium truncate w-32 flex-shrink-0">{file.name}</span>
+                <span className="text-xs text-[#1A1A2E] font-medium truncate w-32 shrink-0">{file.name}</span>
                 <input
                   type="text"
                   placeholder="Description (optional)"
@@ -526,7 +533,7 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
                   className="flex-1 px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F] bg-white"
                 />
                 <button type="button" onClick={() => removePending(idx)}
-                  className="p-1 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0">
+                  className="p-1 text-[#9CA3AF] hover:text-red-500 transition shrink-0">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -550,7 +557,7 @@ function ProceedingAttachments({ proceedingId, docs, canEdit }: {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl border border-[#E5E7EB] w-full max-w-sm p-6">
             <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Delete Attachment?</h3>
-            <p className="text-sm text-[#6B7280] mb-5">Delete <strong>"{confirmDelete.file_name}"</strong>? This will move it to trash.</p>
+            <p className="text-sm text-[#6B7280] mb-5">Delete <strong>&quot;{confirmDelete.file_name}&quot;</strong>? This will move it to trash.</p>
             <div className="flex gap-3">
               <button type="button" onClick={() => setConfirmDelete(null)} disabled={deleting}
                 className="flex-1 px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
@@ -647,10 +654,10 @@ function EventAttachments({ eventId, docs, canEdit }: {
     <div className="mt-2">
       <div className="border border-[#E5E7EB] rounded-lg overflow-hidden">
         {/* Header */}
-        <div className="px-3 py-1.5 bg-[#F8F9FA] flex items-center justify-between border-b border-[#E5E7EB]">
-          <span className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Files ({activeDocs.length})</span>
+        <div className="px-4 py-2 bg-[#F8F9FA] flex items-center justify-between border-b border-[#E5E7EB]">
+          <span className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Attachments ({activeDocs.length})</span>
           {canEdit && (
-            <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-[#E5E7EB] bg-white rounded text-[#6B7280] hover:bg-[#F8F9FA] transition">
+            <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-[#E5E7EB] bg-white rounded-lg text-[#6B7280] hover:bg-[#F8F9FA] transition">
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
@@ -665,7 +672,7 @@ function EventAttachments({ eventId, docs, canEdit }: {
           <div className="px-3 py-1.5 text-xs text-red-600 bg-red-50 border-b border-red-100">{error}</div>
         )}
         {activeDocs.length === 0 && pendingFiles.length === 0 ? (
-          <div className="px-3 py-2 text-center text-xs text-[#9CA3AF]">No files attached.</div>
+          <div className="px-4 py-3 text-center text-xs text-[#9CA3AF]">No attachments.{canEdit ? " Use Choose Files to add files." : ""}</div>
         ) : activeDocs.length > 0 ? (
           <div className="divide-y divide-[#F3F4F6]">
             {activeDocs.map((doc) => (
@@ -676,36 +683,36 @@ function EventAttachments({ eventId, docs, canEdit }: {
 
         {/* Pending files with description inputs */}
         {pendingFiles.length > 0 && (
-          <div className="border-t border-[#E5E7EB] bg-[#F8F9FA] px-3 py-2.5 space-y-2.5">
-            {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2.5 py-1">{error}</div>}
+          <div className="border-t border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3 space-y-3">
+            {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-1.5">{error}</div>}
             {pendingFiles.map(({ file, desc }, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div key={idx} className="flex items-center gap-3">
+                <svg className="w-3.5 h-3.5 text-[#4A6FA5] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <span className="text-xs text-[#1A1A2E] font-medium truncate w-28 flex-shrink-0">{file.name}</span>
+                <span className="text-xs text-[#1A1A2E] font-medium truncate w-32 shrink-0">{file.name}</span>
                 <input
                   type="text"
                   placeholder="Description (optional)"
                   value={desc}
                   onChange={(e) => updateDesc(idx, e.target.value)}
-                  className="flex-1 px-2 py-0.5 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F] bg-white"
+                  className="flex-1 px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F] bg-white"
                 />
                 <button type="button" onClick={() => removePending(idx)}
-                  className="p-0.5 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0">
+                  className="p-1 text-[#9CA3AF] hover:text-red-500 transition shrink-0">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
             ))}
-            <div className="flex gap-2 pt-0.5">
+            <div className="flex gap-2 pt-1">
               <button type="button" onClick={handleUploadAll} disabled={uploading}
-                className="px-2.5 py-1 text-xs bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium disabled:opacity-50">
+                className="px-3 py-1 text-xs bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium disabled:opacity-50">
                 {uploading ? "Uploading…" : `Attach ${pendingFiles.length > 1 ? `All (${pendingFiles.length})` : "File"}`}
               </button>
               <button type="button" onClick={() => { setPendingFiles([]); setError(null); }}
-                className="px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-white">
+                className="px-3 py-1 text-xs border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-white">
                 Cancel
               </button>
             </div>
@@ -715,8 +722,8 @@ function EventAttachments({ eventId, docs, canEdit }: {
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl border border-[#E5E7EB] w-full max-w-sm p-6">
-            <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Delete File?</h3>
-            <p className="text-sm text-[#6B7280] mb-5">Delete <strong>"{confirmDelete.file_name}"</strong>? This will move it to trash.</p>
+            <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Delete Attachment?</h3>
+            <p className="text-sm text-[#6B7280] mb-5">Delete <strong>&quot;{confirmDelete.file_name}&quot;</strong>? This will move it to trash.</p>
             <div className="flex gap-3">
               <button type="button" onClick={() => setConfirmDelete(null)} disabled={deleting}
                 className="flex-1 px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
@@ -765,7 +772,7 @@ function MultiSelect({ options, selected, onChange, placeholder }: {
             ))}
           </div>
         )}
-        <svg className={`w-4 h-4 flex-shrink-0 text-[#6B7280] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg className={`w-4 h-4 shrink-0 text-[#6B7280] transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
       </div>
@@ -778,7 +785,7 @@ function MultiSelect({ options, selected, onChange, placeholder }: {
             ) : options.map(opt => (
               <div key={opt.value} onClick={() => toggle(opt.value)}
                 className="flex items-center gap-2 px-3 py-2 hover:bg-[#F3F4F6] cursor-pointer">
-                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected.includes(opt.value) ? "bg-[#1E3A5F] border-[#1E3A5F]" : "border-[#D1D5DB]"}`}>
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selected.includes(opt.value) ? "bg-[#1E3A5F] border-[#1E3A5F]" : "border-[#D1D5DB]"}`}>
                   {selected.includes(opt.value) && (
                     <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -913,7 +920,7 @@ function Modal({ title, onClose, isDirty, children }: {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl border border-[#E5E7EB] w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-[#E5E7EB] flex items-center justify-between flex-shrink-0">
+        <div className="px-6 py-4 border-b border-[#E5E7EB] flex items-center justify-between shrink-0">
           <h3 className="text-base font-semibold text-[#1A1A2E]">{title}</h3>
           <button onClick={handleClose} className="text-[#9CA3AF] hover:text-[#6B7280]">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1057,13 +1064,6 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
   const [addProcPendingFiles, setAddProcPendingFiles] = useState<{ file: File; desc: string }[]>([]);
 
-  function addProcFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    setAddProcPendingFiles((prev) => [...prev, ...files.map((f) => ({ file: f, desc: "" }))]);
-    e.target.value = "";
-  }
-
   async function handleAddProc(e: React.FormEvent) {
     e.preventDefault();
     setAddProcSaving(true); setAddProcError(null);
@@ -1096,13 +1096,6 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [eventSaving, setEventSaving] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
   const [addEventPendingFiles, setAddEventPendingFiles] = useState<{ file: File; desc: string }[]>([]);
-
-  function addEventFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    setAddEventPendingFiles((prev) => [...prev, ...files.map((f) => ({ file: f, desc: "" }))]);
-    e.target.value = "";
-  }
 
   // ── View Event ──
   const [viewEvent, setViewEvent] = useState<AppEvent | null>(null);
@@ -1335,7 +1328,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   );
 
   const sortedProceedings = [...(appeal.proceedings ?? [])]
-    .filter((p) => !(p as any).deleted_at)
+    .filter((p) => !p.deleted_at)
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   // Track which proceedings are expanded (collapsed by default)
@@ -1388,7 +1381,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
           <DetailRow label="Status" value={(() => { const s = STATUS_CFG[appeal.status ?? "open"]; return s ? <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span> : null; })()} />
         </div>
         {canEdit && (
-          <div className="flex items-center gap-0.5 flex-shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0">
             <button
               onClick={() => { setEditClientId(clientOrg?.id ?? ""); setEditFY(appeal.financial_year?.id ?? ""); setEditAY(appeal.assessment_year?.id ?? ""); setEditAct(appeal.act_regulation?.id ?? ""); setEditAppealStatus(appeal.status ?? "open"); setAppealError(null); setShowEditAppeal(true); }}
               title="Edit Litigation" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#6B7280] hover:text-[#1A1A2E] inline-flex"
@@ -1431,14 +1424,14 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                 >
                   {/* Chevron */}
                   <svg
-                    className={`w-4 h-4 flex-shrink-0 text-[#9CA3AF] transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
+                    className={`w-4 h-4 shrink-0 text-[#9CA3AF] transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
                     fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
 
                   {/* Number */}
-                  <span className="text-xs text-[#9CA3AF] font-medium bg-[#F3F4F6] px-2 py-0.5 rounded flex-shrink-0">
+                  <span className="text-xs text-[#9CA3AF] font-medium bg-[#F3F4F6] px-2 py-0.5 rounded shrink-0">
                     #{idx + 1}
                   </span>
 
@@ -1448,7 +1441,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                   </span>
 
                   {/* Badges + actions */}
-                  <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                  <div className="ml-auto flex items-center gap-2 shrink-0">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${impCfg ? impCfg.cls : "bg-[#F3F4F6] text-[#9CA3AF]"}`}>{impCfg ? impCfg.label : "—"}</span>
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#F3F4F6] text-[#6B7280] capitalize hidden md:inline-flex">{proc.mode ?? "—"}</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${procStatusCfg ? procStatusCfg.cls : "bg-[#F3F4F6] text-[#9CA3AF]"}`}>{procStatusCfg ? procStatusCfg.label : "—"}</span>
@@ -1513,7 +1506,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
                       function EventActions({ ev }: { ev: AppEvent }) {
                         return (
-                          <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => setViewEvent(ev)} title="View" className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
                               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             </button>
@@ -1549,14 +1542,14 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                               className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-[#F8F9FA] transition-colors ${isSub ? "pl-6" : "bg-[#F8FAFF]"}`}
                               onClick={() => toggleSubEvent(ev.id)}
                             >
-                              <svg className={`w-3.5 h-3.5 flex-shrink-0 text-[#9CA3AF] transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <svg className={`w-3.5 h-3.5 shrink-0 text-[#9CA3AF] transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                               </svg>
-                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${isSub ? "bg-purple-50 text-purple-700" : "bg-[#EEF2FF] text-[#4A6FA5]"}`}>
+                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${isSub ? "bg-purple-50 text-purple-700" : "bg-[#EEF2FF] text-[#4A6FA5]"}`}>
                                 {isSub ? "Sub" : "Main"}
                               </span>
                               <span className="text-xs text-[#1A1A2E] font-medium flex-1 min-w-0 truncate">{getEventLabel(ev.category, ev.details)}</span>
-                              <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                              <div className="ml-auto flex items-center gap-2 shrink-0">
                                 <span className="inline-flex items-center gap-1 whitespace-nowrap hidden sm:inline-flex">
                                   <span className="text-xs text-[#9CA3AF]">Notice:</span>
                                   <span className="text-xs text-[#6B7280]">{noticeDate}</span>
@@ -1565,9 +1558,9 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                   <span className="text-xs text-[#9CA3AF]">Due:</span>
                                   <span className="text-xs text-[#6B7280]">{dueDate}</span>
                                 </span>
-                                <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
                                 {(() => { const cnt = (ev.event_documents ?? []).filter(d => !d.deleted_at).length; return (
-                                  <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280] flex-shrink-0">
+                                  <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280] shrink-0">
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                                     {cnt}
                                   </span>
@@ -1634,7 +1627,6 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                               {/* Main events with their sub events */}
                               {mainEvents.map((master, mIdx) => {
                                 const subs = subEventsByParent[master.id] ?? [];
-                                const hasSubEvents = subs.length > 0 || canEdit;
                                 const isSubsExpanded = expandedMasters.has(master.id);
                                 return (
                                   <div key={master.id}>
@@ -1643,13 +1635,13 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                       className="flex items-center gap-3 px-3 py-2.5 bg-[#F8FAFF] cursor-pointer hover:bg-[#EEF2FF] transition-colors"
                                       onClick={() => toggleMaster(master.id)}
                                     >
-                                      <svg className={`w-3.5 h-3.5 flex-shrink-0 text-[#9CA3AF] transition-transform duration-150 ${isSubsExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                      <svg className={`w-3.5 h-3.5 shrink-0 text-[#9CA3AF] transition-transform duration-150 ${isSubsExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                                       </svg>
-                                      <span className="text-xs text-[#9CA3AF] font-medium bg-[#F3F4F6] px-1.5 py-0.5 rounded flex-shrink-0">#{mIdx + 1}</span>
-                                      <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 bg-[#EEF2FF] text-[#4A6FA5]">Main</span>
+                                      <span className="text-xs text-[#9CA3AF] font-medium bg-[#F3F4F6] px-1.5 py-0.5 rounded shrink-0">#{mIdx + 1}</span>
+                                      <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 bg-[#EEF2FF] text-[#4A6FA5]">Main</span>
                                       <span className="text-xs text-[#1A1A2E] font-medium flex-1 min-w-0 truncate">{getEventLabel(master.category, master.details)}</span>
-                                      <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                                      <div className="ml-auto flex items-center gap-2 shrink-0">
                                         {(() => {
                                           const effectiveCat = master.category;
                                           const primaryKey = PRIMARY_DATE[effectiveCat];
@@ -1668,8 +1660,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                                 <span className="text-xs text-[#9CA3AF]">Due:</span>
                                                 <span className="text-xs text-[#6B7280]">{dueDate}</span>
                                               </span>
-                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
-                                              <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280] flex-shrink-0">
+                                              <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                              <span className="inline-flex items-center gap-0.5 text-xs text-[#6B7280] shrink-0">
                                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                                                 {cnt}
                                               </span>
@@ -1820,29 +1812,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
           <form onSubmit={handleAddProc} className="space-y-4">
             <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} onMultiChange={proceedingMultiChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
             {/* Attachments */}
-            <div className="border-t border-[#F3F4F6] pt-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[#6B7280]">Attachments (optional)</span>
-                <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-[#F8F9FA] transition">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                  Choose Files
-                  <input type="file" multiple className="hidden" onChange={addProcFileSelect} />
-                </label>
-              </div>
-              {addProcPendingFiles.map(({ file, desc }, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <span className="text-xs text-[#1A1A2E] truncate w-32 flex-shrink-0">{file.name}</span>
-                  <input type="text" placeholder="Description (optional)" value={desc}
-                    onChange={(e) => setAddProcPendingFiles((prev) => prev.map((p, i) => i === idx ? { ...p, desc: e.target.value } : p))}
-                    className="flex-1 px-2.5 py-1 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F]" />
-                  <button type="button" onClick={() => setAddProcPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
-                    className="p-1 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
-              ))}
-            </div>
+            <PendingAttachments files={addProcPendingFiles} onChange={setAddProcPendingFiles} />
             {addProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{addProcError}</div>}
             <div className="flex gap-3 justify-end pt-2">
               <button type="button" onClick={() => { setShowAddProc(false); setAddProcPendingFiles([]); }} className="px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">Cancel</button>
@@ -2070,7 +2040,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                       >
                         <option value="">Select…</option>
                         {[...(mastersByType["proceeding_type"] ?? [])]
-                          .filter((m) => m.parent_id === (appeal.act_regulation as any)?.id)
+                          .filter((m) => m.parent_id === appeal.act_regulation?.id)
                           .sort((a, b) => a.name.localeCompare(b.name))
                           .map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
@@ -2214,7 +2184,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                       <select value={eventDetails[field.key] ?? ""} onChange={(e) => setDetail(field.key, e.target.value)} className={inp}>
                         <option value="">Select…</option>
                         {[...(mastersByType["proceeding_type"] ?? [])]
-                          .filter((m) => m.parent_id === (appeal.act_regulation as any)?.id)
+                          .filter((m) => m.parent_id === appeal.act_regulation?.id)
                           .sort((a, b) => a.name.localeCompare(b.name))
                           .map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
@@ -2239,29 +2209,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
             </Field>
 
             {/* Attachments */}
-            <div className="border-t border-[#F3F4F6] pt-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[#6B7280]">Attachments (optional)</span>
-                <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border border-[#E5E7EB] rounded-lg text-[#6B7280] hover:bg-[#F8F9FA] transition">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                  Choose Files
-                  <input type="file" multiple className="hidden" onChange={addEventFileSelect} />
-                </label>
-              </div>
-              {addEventPendingFiles.map(({ file, desc }, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <svg className="w-3.5 h-3.5 text-[#4A6FA5] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <span className="text-xs text-[#1A1A2E] truncate w-28 flex-shrink-0">{file.name}</span>
-                  <input type="text" placeholder="Description (optional)" value={desc}
-                    onChange={(e) => setAddEventPendingFiles((prev) => prev.map((p, i) => i === idx ? { ...p, desc: e.target.value } : p))}
-                    className="flex-1 px-2 py-0.5 text-xs border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1E3A5F]" />
-                  <button type="button" onClick={() => setAddEventPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
-                    className="p-0.5 text-[#9CA3AF] hover:text-red-500 transition flex-shrink-0">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
-              ))}
-            </div>
+            <PendingAttachments files={addEventPendingFiles} onChange={setAddEventPendingFiles} />
 
             {eventError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{eventError}</div>}
 
