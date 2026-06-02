@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { SessionUser } from "@/lib/types";
 
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
+  try {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return null;
 
   const { data: profile } = await supabase
     .from("users")
@@ -40,4 +41,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     is_active: profile.is_active,
     avatar_url: (profile as unknown as { avatar_url?: string | null }).avatar_url ?? null,
   };
+  } catch {
+    return null;
+  }
 });
