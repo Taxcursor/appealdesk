@@ -1341,20 +1341,10 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     });
   }
 
-  // Sub events collapsed by default; tracks expanded main event IDs
+  // Tracks which main event rows have their sub events expanded
   const [expandedMasters, setExpandedMasters] = useState<Set<string>>(new Set());
   function toggleMaster(id: string) {
     setExpandedMasters((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  // Tracks which sub event rows are expanded (inline details)
-  const [expandedSubEvents, setExpandedSubEvents] = useState<Set<string>>(new Set());
-  function toggleSubEvent(id: string) {
-    setExpandedSubEvents((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -1524,7 +1514,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                         );
                       }
 
-                      function EventRow({ ev, isSub, parentOrderNumber }: { ev: AppEvent; isSub?: boolean; parentOrderNumber?: string | null }) {
+                      function EventRow({ ev, isSub }: { ev: AppEvent; isSub?: boolean }) {
                         const effectiveCat = ev.event_type === "sub" && ev.category === "others" ? "others_sub" : ev.category;
                         const primaryKey = PRIMARY_DATE[effectiveCat];
                         const noticeDate = primaryKey && ev.details?.[primaryKey]
@@ -1533,18 +1523,12 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                         const dueDateKey = DUE_DATE_KEY[effectiveCat];
                         const dueDate = dueDateKey && ev.details?.[dueDateKey] ? fmtDateTime(ev.details[dueDateKey]) : "—";
                         const statusCfg = EVENT_STATUS_CFG[ev.status ?? "open"] ?? EVENT_STATUS_CFG.open;
-                        const isExpanded = expandedSubEvents.has(ev.id);
-                        const detailFields = CATEGORY_FIELDS[effectiveCat] ?? [];
                         return (
                           <div className={isSub ? "bg-white border-t border-[#F3F4F6]" : ""}>
-                            {/* Row header — click to expand/collapse inline details */}
+                            {/* Single-record row — no detail panel below */}
                             <div
-                              className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-[#F8F9FA] transition-colors ${isSub ? "pl-6" : "bg-[#F8FAFF]"}`}
-                              onClick={() => toggleSubEvent(ev.id)}
+                              className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${isSub ? "pl-6 bg-[#FAFBFF]" : "bg-[#F8FAFF] cursor-pointer hover:bg-[#F8F9FA]"}`}
                             >
-                              <svg className={`w-3.5 h-3.5 shrink-0 text-[#9CA3AF] transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                              </svg>
                               <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${isSub ? "bg-purple-50 text-purple-700" : "bg-[#EEF2FF] text-[#4A6FA5]"}`}>
                                 {isSub ? "Sub" : "Main"}
                               </span>
@@ -1568,39 +1552,6 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                 <EventActions ev={ev} />
                               </div>
                             </div>
-                            {/* Inline details panel — shown when expanded */}
-                            {isExpanded && (
-                              <div className={`${isSub ? "pl-10" : "pl-6"} pr-4 py-3 bg-[#F8FAFF] border-t border-[#EEF2FF] space-y-2`}>
-                                {isSub && parentOrderNumber && (
-                                  <div className="pb-1 border-b border-[#EEF2FF]">
-                                    <p className="text-xs text-[#9CA3AF] mb-0.5">Order No. (Parent)</p>
-                                    <p className="text-xs font-medium text-[#1A1A2E]">#{parentOrderNumber}</p>
-                                  </div>
-                                )}
-                                {detailFields.length > 0 ? (
-                                  <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-                                    {detailFields.map((field) => {
-                                      const rawVal = ev.details?.[field.key];
-                                      const display = rawVal
-                                        ? (field.type === "datetime" ? fmtDateTime(rawVal) : rawVal)
-                                        : "—";
-                                      return (
-                                        <div key={field.key} className={field.fullWidth ? "col-span-2" : ""}>
-                                          <p className="text-xs text-[#9CA3AF] mb-0.5">{field.label}</p>
-                                          <p className="text-xs text-[#1A1A2E]">{display}</p>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
-                                {ev.description && (
-                                  <p className="text-xs text-[#6B7280] italic pt-1">{ev.description}</p>
-                                )}
-                                {detailFields.length === 0 && !ev.description && (
-                                  <p className="text-xs text-[#9CA3AF]">No details recorded.</p>
-                                )}
-                              </div>
-                            )}
                           </div>
                         );
                       }
@@ -1630,7 +1581,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                 const isSubsExpanded = expandedMasters.has(master.id);
                                 return (
                                   <div key={master.id}>
-                                    {/* Main row — click toggles sub-event expansion */}
+                                    {/* Main row — click to expand/collapse sub events */}
                                     <div
                                       className="flex items-center gap-3 px-3 py-2.5 bg-[#F8FAFF] cursor-pointer hover:bg-[#EEF2FF] transition-colors"
                                       onClick={() => toggleMaster(master.id)}
@@ -1686,11 +1637,11 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                       </div>
                                     </div>
 
-                                    {/* Sub events + Add Sub Event — shown only when expanded */}
+                                    {/* Sub events + Add Sub Event — shown when main row is expanded */}
                                     {isSubsExpanded && (
                                       <>
                                         {subs.map((sub) => (
-                                          <EventRow key={sub.id} ev={sub} isSub parentOrderNumber={master.event_notice_number} />
+                                          <EventRow key={sub.id} ev={sub} isSub />
                                         ))}
                                         {canEdit && (
                                           <div className="pl-8 pr-3 py-1.5 bg-white border-t border-[#F3F4F6]" onClick={(e) => e.stopPropagation()}>

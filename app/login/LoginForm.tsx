@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 
 interface Props {
@@ -22,12 +22,19 @@ export default function LoginForm({ platformName, description, logoUrl, supportE
   const [resetSent, setResetSent] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  // Fall back to the branded mark if the configured logo URL fails to load
+  // (e.g. a stale/dead storage URL) so we never show a broken-image icon.
+  const [logoFailed, setLogoFailed] = useState(false);
   const router = useRouter();
-
-  const searchParams = typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search)
-    : null;
-  const deactivated = searchParams?.get("error") === "deactivated";
+  const searchParams = useSearchParams();
+  const errorCode = searchParams.get("error");
+  // Map auth redirect error codes to user-facing messages.
+  const errorMessages: Record<string, string> = {
+    deactivated: "Your account has been deactivated. Contact your administrator.",
+    no_profile: "Your account isn't fully set up yet. Contact your administrator.",
+    auth_callback_failed: "That sign-in link is invalid or has expired. Please try again.",
+  };
+  const urlError = errorCode ? errorMessages[errorCode] ?? null : null;
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -76,7 +83,7 @@ export default function LoginForm({ platformName, description, logoUrl, supportE
         {/* Brand */}
         <div className="text-center mb-8">
           <div className="flex flex-col items-center gap-3 mb-3">
-            {logoUrl ? (
+            {logoUrl && !logoFailed ? (
               <Image
                 src={logoUrl}
                 alt={platformName}
@@ -86,6 +93,7 @@ export default function LoginForm({ platformName, description, logoUrl, supportE
                 loading="eager"
                 priority
                 unoptimized
+                onError={() => setLogoFailed(true)}
               />
             ) : (
               <div className="w-28 h-28 rounded-2xl bg-[#1E3A5F] flex items-center justify-center shrink-0">
@@ -107,9 +115,9 @@ export default function LoginForm({ platformName, description, logoUrl, supportE
             <>
               <h2 className="text-lg font-semibold text-[#1A1A2E] mb-6">Sign in to your account</h2>
 
-              {deactivated && (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
-                  Your account has been deactivated. Contact your administrator.
+              {urlError && (
+                <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+                  {urlError}
                 </div>
               )}
 
@@ -148,7 +156,7 @@ export default function LoginForm({ platformName, description, logoUrl, supportE
                 </div>
 
                 {error && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
                     {error}
                   </div>
                 )}
@@ -217,7 +225,7 @@ export default function LoginForm({ platformName, description, logoUrl, supportE
                 </div>
 
                 {resetError && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
                     {resetError}
                   </div>
                 )}

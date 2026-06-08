@@ -16,15 +16,14 @@ export default async function MastersPage() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#1A1A2E]">Master Records</h1>
+        <h1 className="text-2xl font-semibold text-[#1A1A2E]">
+          Master Records
+        </h1>
         <p className="text-[#6B7280] text-sm mt-0.5">
           Global platform-level reference data used across all service providers
         </p>
       </div>
-      <MastersClient
-        records={records ?? []}
-        userRole={user!.role}
-      />
+      <MastersClient records={records ?? []} userRole={user!.role} />
     </div>
   );
 }

@@ -13,7 +13,6 @@
 # testing
 /coverage
 /context
-
 # next.js
 /.next/
 /out/
@@ -24,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+temp
+
 
 # debug
 npm-debug.log*
@@ -45,3 +46,5 @@ next-env.d.ts
 features
 CLAUDE.md
 AGENTS.md
+skills
+SESSION_SUMMARY.md

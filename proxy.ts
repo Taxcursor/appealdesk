@@ -40,42 +40,52 @@ export async function proxy(request: NextRequest) {
 
   // Logged in + on login page → route to correct home by role
   if (user && isLoginPage) {
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from("users")
-      .select("role, is_active")
+      .select("role, is_active, deleted_at")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile?.is_active) {
-      // Deactivated user — sign out and stay on login
+    // Transient read failure (e.g. RLS hiccup / DB blip): do NOT destroy the
+    // session or mislabel the user as deactivated — let them retry the page.
+    if (error) {
+      return supabaseResponse;
+    }
+
+    // Genuinely blocked: explicitly deactivated, soft-deleted, or no profile row.
+    // Sign out with an accurate reason so active users are never trapped here.
+    if (!profile || profile.is_active === false || profile.deleted_at !== null) {
       await supabase.auth.signOut();
-      return NextResponse.redirect(new URL("/login?error=deactivated", request.url));
+      const reason = profile ? "deactivated" : "no_profile";
+      return NextResponse.redirect(new URL(`/login?error=${reason}`, request.url));
     }
 
     const url = request.nextUrl.clone();
-    const role = profile?.role;
-
-    if (role === "super_admin" || role === "platform_admin") {
-      url.pathname = "/platform/dashboard";
-    } else {
-      url.pathname = "/dashboard";
-    }
+    url.pathname =
+      profile.role === "super_admin" || profile.role === "platform_admin"
+        ? "/platform/dashboard"
+        : "/dashboard";
     return NextResponse.redirect(url);
   }
 
   // Logged in — guard platform routes from non-platform users
   if (user && pathname.startsWith("/platform")) {
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from("users")
       .select("role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    const role = profile?.role;
-    if (role !== "super_admin" && role !== "platform_admin") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
+    // On a transient read failure, let the request through — the platform
+    // layout re-checks via getCurrentUser() and will redirect if truly needed.
+    // This avoids falsely bouncing a real platform admin on a DB blip.
+    if (!error) {
+      const role = profile?.role;
+      if (role !== "super_admin" && role !== "platform_admin") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard";
+        return NextResponse.redirect(url);
+      }
     }
   }
 

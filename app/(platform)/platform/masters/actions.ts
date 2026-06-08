@@ -6,7 +6,10 @@ import { revalidatePath } from "next/cache";
 
 export async function createMasterRecord(name: string, type: string) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "super_admin" && user.role !== "platform_admin")) {
+  if (
+    !user ||
+    (user.role !== "super_admin" && user.role !== "platform_admin")
+  ) {
     throw new Error("Unauthorized");
   }
 
@@ -26,7 +29,10 @@ export async function createMasterRecord(name: string, type: string) {
 
 export async function renameMasterRecord(id: string, newName: string) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "super_admin" && user.role !== "platform_admin")) {
+  if (
+    !user ||
+    (user.role !== "super_admin" && user.role !== "platform_admin")
+  ) {
     throw new Error("Unauthorized");
   }
   const supabase = await createServiceClient();
@@ -38,9 +44,16 @@ export async function renameMasterRecord(id: string, newName: string) {
   revalidatePath("/platform/masters");
 }
 
-export async function createChildMasterRecord(name: string, type: string, parentId: string) {
+export async function createChildMasterRecord(
+  name: string,
+  type: string,
+  parentId: string,
+) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "super_admin" && user.role !== "platform_admin")) {
+  if (
+    !user ||
+    (user.role !== "super_admin" && user.role !== "platform_admin")
+  ) {
     throw new Error("Unauthorized");
   }
   const supabase = await createServiceClient();
@@ -57,7 +70,10 @@ export async function createChildMasterRecord(name: string, type: string, parent
 
 export async function toggleMasterRecord(id: string, isActive: boolean) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "super_admin" && user.role !== "platform_admin")) {
+  if (
+    !user ||
+    (user.role !== "super_admin" && user.role !== "platform_admin")
+  ) {
     throw new Error("Unauthorized");
   }
 
@@ -72,13 +88,23 @@ export async function toggleMasterRecord(id: string, isActive: boolean) {
 
 export async function deleteMasterRecord(id: string) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "super_admin" && user.role !== "platform_admin"))
+  if (
+    !user ||
+    (user.role !== "super_admin" && user.role !== "platform_admin")
+  ) {
     throw new Error("Unauthorized");
+  }
 
   const supabase = await createServiceClient();
   // Soft-delete: also soft-delete children (proceeding types under this act)
-  await supabase.from("master_records").update({ deleted_at: new Date().toISOString(), is_active: false }).eq("parent_id", id);
-  await supabase.from("master_records").update({ deleted_at: new Date().toISOString(), is_active: false }).eq("id", id);
+  await supabase
+    .from("master_records")
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq("parent_id", id);
+  await supabase
+    .from("master_records")
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq("id", id);
 
   revalidatePath("/platform/masters");
 }

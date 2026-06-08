@@ -15,7 +15,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       organization:organizations!org_id(id, type, parent_sp_id)
     `)
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
   if (!profile) return null;
 

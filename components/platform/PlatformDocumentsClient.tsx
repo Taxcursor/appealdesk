@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PER_PAGE_OPTIONS } from "@/lib/constants";
 import {
   createForm, updateForm, deleteForm, FormInput,
   createTemplate, updateTemplate, deleteTemplate,
@@ -17,6 +18,8 @@ interface Form {
   parallel_rule_1962: string | null;
   url: string | null;
   sort_order: number;
+  created_at: string;
+  form_files?: { id: string }[];
 }
 
 interface Template {
@@ -50,9 +53,24 @@ function fmtSize(bytes: number | null) {
 const blankForm: FormInput = { rule_no: "", rule_heading: "", form_no: "", page_no: "", parallel_rule_1962: "", url: "" };
 const inp = "w-full px-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]";
 
+function pageNums(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, "...", total];
+  if (current >= total - 3) return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+  return [1, "...", current - 1, current, current + 1, "...", total];
+}
+const btnPage = (active: boolean) =>
+  `min-w-[36px] h-9 px-2 text-sm rounded-lg font-medium transition ${active ? "bg-[#1E3A5F] text-white" : "border border-[#E5E7EB] text-[#1A1A2E] hover:bg-[#F8F9FA]"}`;
+
 export default function PlatformDocumentsClient({ forms, templates, canEdit }: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"forms" | "templates">("forms");
+  const [frmSearch, setFrmSearch] = useState("");
+  const [tplSearch, setTplSearch] = useState("");
+  const [frmPage, setFrmPage] = useState(1);
+  const [tplPage, setTplPage] = useState(1);
+  const [frmPerPage, setFrmPerPage] = useState(25);
+  const [tplPerPage, setTplPerPage] = useState(25);
 
   // Form state
   const [showFormModal, setShowFormModal] = useState(false);
@@ -133,6 +151,28 @@ export default function PlatformDocumentsClient({ forms, templates, canEdit }: P
     finally { setDeletingTplId(null); }
   }
 
+  const filteredForms = forms.filter((f) => {
+    const q = frmSearch.toLowerCase();
+    return !q || (f.form_no ?? "").toLowerCase().includes(q) || f.rule_heading.toLowerCase().includes(q) || (f.rule_no ?? "").toLowerCase().includes(q) || fmtDate(f.created_at).toLowerCase().includes(q);
+  });
+  const frmTotal = filteredForms.length;
+  const frmTotalPages = Math.max(1, Math.ceil(frmTotal / frmPerPage));
+  const frmPageSafe = Math.min(frmPage, frmTotalPages);
+  const frmFrom = frmTotal === 0 ? 0 : (frmPageSafe - 1) * frmPerPage + 1;
+  const frmTo = Math.min(frmPageSafe * frmPerPage, frmTotal);
+  const pagedForms = filteredForms.slice((frmPageSafe - 1) * frmPerPage, frmPageSafe * frmPerPage);
+
+  const filteredTemplates = templates.filter((t) => {
+    const q = tplSearch.toLowerCase();
+    return !q || t.name.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q);
+  });
+  const tplTotal = filteredTemplates.length;
+  const tplTotalPages = Math.max(1, Math.ceil(tplTotal / tplPerPage));
+  const tplPageSafe = Math.min(tplPage, tplTotalPages);
+  const tplFrom = tplTotal === 0 ? 0 : (tplPageSafe - 1) * tplPerPage + 1;
+  const tplTo = Math.min(tplPageSafe * tplPerPage, tplTotal);
+  const pagedTemplates = filteredTemplates.slice((tplPageSafe - 1) * tplPerPage, tplPageSafe * tplPerPage);
+
   const tabs = [
     { key: "forms" as const, label: "Forms", count: forms.length },
     { key: "templates" as const, label: "Templates", count: templates.length },
@@ -149,9 +189,9 @@ export default function PlatformDocumentsClient({ forms, templates, canEdit }: P
         <div className="flex gap-1 bg-[#F0F2F5] p-1 rounded-lg">
           {tabs.map((tab) => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === tab.key ? "bg-white text-[#1A1A2E] shadow-sm" : "text-[#6B7280] hover:text-[#1A1A2E]"}`}>
+              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === tab.key ? "bg-[#1E3A5F] text-white shadow-sm" : "text-[#6B7280] hover:text-[#1A1A2E]"}`}>
               {tab.label}
-              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab.key ? "bg-[#EEF2FF] text-[#4A6FA5]" : "bg-white text-[#6B7280]"}`}>{tab.count}</span>
+              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab.key ? "bg-white/20 text-white" : "bg-white text-[#6B7280]"}`}>{tab.count}</span>
             </button>
           ))}
         </div>
@@ -171,80 +211,140 @@ export default function PlatformDocumentsClient({ forms, templates, canEdit }: P
 
       {/* ── FORMS TAB ── */}
       {activeTab === "forms" && (
-        <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b-2 border-[#B0BDD0] bg-[#D1D9E6]">
-            <p className="text-[#1A1A2E] font-semibold text-sm">Forms</p>
+        <div className="space-y-3">
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input type="text" value={frmSearch} onChange={(e) => { setFrmSearch(e.target.value); setFrmPage(1); }}
+              placeholder="Search form no., description, rule no., uploaded on…"
+              className="w-full pl-9 pr-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] bg-white" />
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Rule No.</th>
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Form Description</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Form No.</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24">Section</th>
-                  {canEdit && <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {forms.length === 0 ? (
-                  <tr><td colSpan={canEdit ? 5 : 4} className="px-4 py-12 text-center text-[#6B7280]">No forms added yet.{canEdit && " Click \"Add Row\" to get started."}</td></tr>
-                ) : (
-                  forms.map((f, i) => (
-                    <tr key={f.id} onClick={() => f.url ? window.open(f.url, "_blank") : undefined}
-                      className={`border-b border-[#E5E7EB] ${i % 2 === 0 ? "bg-white" : "bg-[#F8F9FA]"} ${f.url ? "cursor-pointer hover:bg-[#EEF2FF]" : "hover:bg-[#F0F4FA]"} transition-colors`}>
-                      <td className="px-4 py-3 text-center text-[#1A1A2E] font-medium border-r border-[#E5E7EB]">{f.rule_no || "—"}</td>
-                      <td className="px-4 py-3 text-[#1A1A2E] border-r border-[#E5E7EB]"><span className={f.url ? "text-[#4A6FA5] hover:underline" : ""}>{f.rule_heading}</span></td>
-                      <td className="px-4 py-3 text-center text-[#6B7280] border-r border-[#E5E7EB]">{f.form_no || "—"}</td>
-                      <td className="px-4 py-3 text-center text-[#6B7280]">{f.page_no || "—"}</td>
-                      {canEdit && (
-                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-0.5">
-                            <button onClick={() => openEditForm(f)} title="Edit row"
-                              className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            </button>
-                            <button onClick={() => setConfirmDeleteForm(f)} title="Delete row"
-                              className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-500 hover:text-red-700 inline-flex">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                          </div>
+          <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Form No.</th>
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Form Description</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Rule No.</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Section</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-32 border-r border-[#E5E7EB]">Uploaded on</th>
+                    <th className={`text-center px-4 py-3 font-semibold text-[#1A1A2E] w-20 ${canEdit ? "border-r border-[#E5E7EB]" : ""}`}>Files</th>
+                    {canEdit && <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedForms.length === 0 ? (
+                    <tr><td colSpan={canEdit ? 7 : 6} className="px-4 py-12 text-center text-[#6B7280]">
+                      {frmSearch ? `No results for "${frmSearch}"` : (forms.length === 0 ? `No forms added yet.${canEdit ? " Click \"Add Row\" to get started." : ""}` : "No results.")}
+                    </td></tr>
+                  ) : (
+                    pagedForms.map((f, i) => (
+                      <tr key={f.id} onClick={() => f.url ? window.open(f.url, "_blank") : undefined}
+                        className={`border-b border-[#E5E7EB] ${i % 2 === 0 ? "bg-white" : "bg-[#F8F9FA]"} ${f.url ? "cursor-pointer hover:bg-[#EEF2FF]" : "hover:bg-[#F0F4FA]"} transition-colors`}>
+                        <td className="px-4 py-3 text-center text-[#6B7280] border-r border-[#E5E7EB]">{f.form_no || "—"}</td>
+                        <td className="px-4 py-3 text-[#1A1A2E] border-r border-[#E5E7EB]"><span className={f.url ? "text-[#4A6FA5] hover:underline" : ""}>{f.rule_heading}</span></td>
+                        <td className="px-4 py-3 text-center text-[#1A1A2E] font-medium border-r border-[#E5E7EB]">{f.rule_no || "—"}</td>
+                        <td className="px-4 py-3 text-center text-[#6B7280] border-r border-[#E5E7EB]">{f.page_no || "—"}</td>
+                        <td className="px-4 py-3 text-center text-[#6B7280] whitespace-nowrap border-r border-[#E5E7EB]">{fmtDate(f.created_at)}</td>
+                        <td className={`px-4 py-3 text-center ${canEdit ? "border-r border-[#E5E7EB]" : ""}`}>
+                          {(f.form_files ?? []).length === 0 ? (
+                            <span className="text-[#9CA3AF] text-xs">—</span>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 text-[#4A6FA5]">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                              <span className="text-xs font-semibold">{(f.form_files ?? []).length}</span>
+                            </div>
+                          )}
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        {canEdit && (
+                          <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button onClick={() => openEditForm(f)} title="Edit row"
+                                className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                              </button>
+                              <button onClick={() => setConfirmDeleteForm(f)} title="Delete row"
+                                className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-500 hover:text-red-700 inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* Pagination */}
+          <div className="mt-1 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 text-sm text-[#6B7280]">
+              <span>Showing {frmFrom}–{frmTo} of {frmTotal} form{frmTotal !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">Show</span>
+                <select value={frmPerPage} onChange={(e) => { setFrmPerPage(Number(e.target.value)); setFrmPage(1); }}
+                  className="px-2 py-1 text-sm border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]">
+                  {PER_PAGE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span className="text-xs">per page</span>
+              </div>
+            </div>
+            {frmTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setFrmPage(p => Math.max(1, p - 1))} disabled={frmPageSafe === 1}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">← Prev</button>
+                {pageNums(frmPageSafe, frmTotalPages).map((p, i) =>
+                  p === "..." ? <span key={`e${i}`} className="px-1 text-[#9CA3AF] text-sm select-none">…</span>
+                  : <button key={p} onClick={() => setFrmPage(p as number)} className={btnPage(p === frmPageSafe)}>{p}</button>
                 )}
-              </tbody>
-            </table>
+                <button onClick={() => setFrmPage(p => Math.min(frmTotalPages, p + 1))} disabled={frmPageSafe === frmTotalPages}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ── TEMPLATES TAB ── */}
       {activeTab === "templates" && (
-        templates.length === 0 ? (
-          <div className="bg-white border border-[#E5E7EB] rounded-xl p-16 text-center">
-            <svg className="w-10 h-10 text-[#D1D5DB] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+        <div className="space-y-3">
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
             </svg>
-            <p className="text-[#6B7280] text-sm">No templates uploaded yet.</p>
-            {canEdit && <p className="text-[#9CA3AF] text-xs mt-1">Click &quot;Upload Template&quot; to add your first template.</p>}
+            <input type="text" value={tplSearch} onChange={(e) => { setTplSearch(e.target.value); setTplPage(1); }}
+              placeholder="Search template name or description…"
+              className="w-full pl-9 pr-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] bg-white" />
           </div>
-        ) : (
-          <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Template Name</th>
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Description</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Size</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28 border-r border-[#E5E7EB]">Uploaded</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {templates.map((t, i) => {
-                  return (
+          {pagedTemplates.length === 0 ? (
+            <div className="bg-white border border-[#E5E7EB] rounded-xl p-16 text-center">
+              <svg className="w-10 h-10 text-[#D1D5DB] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <p className="text-[#6B7280] text-sm">{tplSearch ? `No results for "${tplSearch}"` : "No templates uploaded yet."}</p>
+              {!tplSearch && canEdit && <p className="text-[#9CA3AF] text-xs mt-1">Click &quot;Upload Template&quot; to add your first template.</p>}
+            </div>
+          ) : (
+            <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Template Name</th>
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Description</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Size</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-32 border-r border-[#E5E7EB]">Uploaded on</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedTemplates.map((t, i) => (
                     <tr key={t.id} onClick={() => window.open(t.file_url, "_blank")}
                       className={`border-b border-[#E5E7EB] last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-[#F8F9FA]"} hover:bg-[#EEF2FF] transition-colors cursor-pointer`}>
                       <td className="px-4 py-3 border-r border-[#E5E7EB]">
@@ -276,12 +376,38 @@ export default function PlatformDocumentsClient({ forms, templates, canEdit }: P
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {/* Pagination */}
+          <div className="mt-1 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 text-sm text-[#6B7280]">
+              <span>Showing {tplFrom}–{tplTo} of {tplTotal} template{tplTotal !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">Show</span>
+                <select value={tplPerPage} onChange={(e) => { setTplPerPage(Number(e.target.value)); setTplPage(1); }}
+                  className="px-2 py-1 text-sm border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]">
+                  {PER_PAGE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span className="text-xs">per page</span>
+              </div>
+            </div>
+            {tplTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setTplPage(p => Math.max(1, p - 1))} disabled={tplPageSafe === 1}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">← Prev</button>
+                {pageNums(tplPageSafe, tplTotalPages).map((p, i) =>
+                  p === "..." ? <span key={`e${i}`} className="px-1 text-[#9CA3AF] text-sm select-none">…</span>
+                  : <button key={p} onClick={() => setTplPage(p as number)} className={btnPage(p === tplPageSafe)}>{p}</button>
+                )}
+                <button onClick={() => setTplPage(p => Math.min(tplTotalPages, p + 1))} disabled={tplPageSafe === tplTotalPages}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+              </div>
+            )}
           </div>
-        )
+        </div>
       )}
 
       {/* ── MODAL: Add/Edit Form Row ── */}

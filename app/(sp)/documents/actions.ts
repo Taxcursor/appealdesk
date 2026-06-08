@@ -3,6 +3,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/user";
 import { revalidatePath } from "next/cache";
+import { logAction } from "@/lib/audit";
 
 function spOnly(role: string) {
   if (!["sp_admin", "sp_staff"].includes(role)) throw new Error("Unauthorized");
@@ -89,6 +90,7 @@ export async function createForm(input: FormInput): Promise<string> {
   }).select("id").single();
 
   if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Form: ${input.rule_heading}` });
   revalidatePath("/documents");
   return data.id;
 }
@@ -171,6 +173,7 @@ export async function createTemplate(input: TemplateInput) {
   });
 
   if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Template: ${input.name}` });
   revalidatePath("/documents");
 }
 
@@ -229,6 +232,7 @@ export async function createResource(input: ResourceInput): Promise<string> {
   }).select("id").single();
 
   if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Resource: ${input.description.substring(0, 60)}` });
   revalidatePath("/documents");
   return data.id;
 }
@@ -269,6 +273,7 @@ export async function addFormFile(formId: string, fileName: string, fileUrl: str
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
   const { data, error } = await supabase.from("form_files").insert({
@@ -280,6 +285,7 @@ export async function addFormFile(formId: string, fileName: string, fileUrl: str
   }).select("id").single();
 
   if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Form file: ${fileName}` });
   revalidatePath("/documents");
   return data.id;
 }
@@ -301,6 +307,7 @@ export async function addResourceFile(resourceId: string, fileName: string, file
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
   const { error } = await supabase.from("resource_files").insert({
@@ -312,6 +319,7 @@ export async function addResourceFile(resourceId: string, fileName: string, file
   });
 
   if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Resource file: ${fileName}` });
   revalidatePath("/documents");
 }
 

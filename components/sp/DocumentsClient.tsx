@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PER_PAGE_OPTIONS } from "@/lib/constants";
 import {
   createForm, updateForm, deleteForm, FormInput,
   addFormFile, deleteFormFile,
@@ -34,6 +35,7 @@ interface Form {
   file_url: string | null;
   file_size: number | null;
   sort_order: number;
+  created_at: string;
   form_files: FormFile[];
 }
 
@@ -571,14 +573,67 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
     }
   }
 
+  // ── Search + pagination state ──────────────────────────────────────
+  const [resSearch, setResSearch] = useState("");
+  const [tplSearch, setTplSearch] = useState("");
+  const [frmSearch, setFrmSearch] = useState("");
+  const [resPage, setResPage] = useState(1);
+  const [tplPage, setTplPage] = useState(1);
+  const [frmPage, setFrmPage] = useState(1);
+  const [resPerPage, setResPerPage] = useState(25);
+  const [tplPerPage, setTplPerPage] = useState(25);
+  const [frmPerPage, setFrmPerPage] = useState(25);
+
+  const filteredResources = resources.filter((r) => {
+    const q = resSearch.toLowerCase();
+    return !q || (r.act?.name ?? "").toLowerCase().includes(q) || r.description.toLowerCase().includes(q) || (r.author ?? "").toLowerCase().includes(q) || fmtDate(r.created_at).toLowerCase().includes(q);
+  });
+  const resTotal = filteredResources.length;
+  const resTotalPages = Math.max(1, Math.ceil(resTotal / resPerPage));
+  const resPageSafe = Math.min(resPage, resTotalPages);
+  const resFrom = resTotal === 0 ? 0 : (resPageSafe - 1) * resPerPage + 1;
+  const resTo = Math.min(resPageSafe * resPerPage, resTotal);
+  const pagedResources = filteredResources.slice((resPageSafe - 1) * resPerPage, resPageSafe * resPerPage);
+
+  const filteredTemplates = templates.filter((t) => {
+    const q = tplSearch.toLowerCase();
+    return !q || t.name.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q);
+  });
+  const tplTotal = filteredTemplates.length;
+  const tplTotalPages = Math.max(1, Math.ceil(tplTotal / tplPerPage));
+  const tplPageSafe = Math.min(tplPage, tplTotalPages);
+  const tplFrom = tplTotal === 0 ? 0 : (tplPageSafe - 1) * tplPerPage + 1;
+  const tplTo = Math.min(tplPageSafe * tplPerPage, tplTotal);
+  const pagedTemplates = filteredTemplates.slice((tplPageSafe - 1) * tplPerPage, tplPageSafe * tplPerPage);
+
+  const filteredForms = forms.filter((f) => {
+    const q = frmSearch.toLowerCase();
+    return !q || (f.form_no ?? "").toLowerCase().includes(q) || f.rule_heading.toLowerCase().includes(q) || (f.rule_no ?? "").toLowerCase().includes(q) || fmtDate(f.created_at).toLowerCase().includes(q);
+  });
+  const frmTotal = filteredForms.length;
+  const frmTotalPages = Math.max(1, Math.ceil(frmTotal / frmPerPage));
+  const frmPageSafe = Math.min(frmPage, frmTotalPages);
+  const frmFrom = frmTotal === 0 ? 0 : (frmPageSafe - 1) * frmPerPage + 1;
+  const frmTo = Math.min(frmPageSafe * frmPerPage, frmTotal);
+  const pagedForms = filteredForms.slice((frmPageSafe - 1) * frmPerPage, frmPageSafe * frmPerPage);
+
+  function pageNums(current: number, total: number): (number | "...")[] {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 4) return [1, 2, 3, 4, 5, "...", total];
+    if (current >= total - 3) return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+    return [1, "...", current - 1, current, current + 1, "...", total];
+  }
+  const btnPage = (active: boolean) =>
+    `min-w-[36px] h-9 px-2 text-sm rounded-lg font-medium transition ${active ? "bg-[#1E3A5F] text-white" : "border border-[#E5E7EB] text-[#1A1A2E] hover:bg-[#F8F9FA]"}`;
+
   // ── Shared UI helpers ──────────────────────────────────────────────
 
   const inp = "w-full px-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]";
 
   const tabs = [
     { key: "resources" as const, label: "Resources", count: resources.length },
-    { key: "forms" as const, label: "Forms", count: forms.length },
     { key: "templates" as const, label: "Templates", count: templates.length },
+    { key: "forms" as const, label: "Forms", count: forms.length },
   ];
 
   // ── Render ─────────────────────────────────────────────────────────
@@ -598,11 +653,11 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 text-sm font-medium rounded-md transition ${
-                activeTab === tab.key ? "bg-white text-[#1A1A2E] shadow-sm" : "text-[#6B7280] hover:text-[#1A1A2E]"
+                activeTab === tab.key ? "bg-[#1E3A5F] text-white shadow-sm" : "text-[#6B7280] hover:text-[#1A1A2E]"
               }`}
             >
               {tab.label}
-              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab.key ? "bg-[#EEF2FF] text-[#4A6FA5]" : "bg-white text-[#6B7280]"}`}>
+              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab.key ? "bg-white/20 text-white" : "bg-white text-[#6B7280]"}`}>
                 {tab.count}
               </span>
             </button>
@@ -631,56 +686,66 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
 
       {/* ── TAB: FORMS (Income Tax Rules) ── */}
       {activeTab === "forms" && (
-        <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Rule No.</th>
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Form Description</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Form No.</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Section</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28 border-r border-[#E5E7EB]">Forms Link</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Files</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {forms.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-[#6B7280]">
-                      No forms added yet.{canEdit && " Click \"Add Form\" to get started."}
-                    </td>
+        <div className="space-y-3">
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input type="text" value={frmSearch} onChange={(e) => { setFrmSearch(e.target.value); setFrmPage(1); }}
+              placeholder="Search form no., description, rule no., uploaded on…"
+              className="w-full pl-9 pr-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] bg-white" />
+          </div>
+          <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Form No.</th>
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Form Description</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Rule No.</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Section</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-32 border-r border-[#E5E7EB]">Uploaded on</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-20 border-r border-[#E5E7EB]">Files</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28 border-r border-[#E5E7EB]">Link</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
                   </tr>
-                ) : (
-                  forms.map((f, i) => {
-                    const files = f.form_files ?? [];
-                    return (
+                </thead>
+                <tbody>
+                  {pagedForms.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-12 text-center text-[#6B7280]">
+                        {frmSearch ? `No results for "${frmSearch}"` : (forms.length === 0 ? `No forms added yet.${canEdit ? " Click \"Add Form\" to get started." : ""}` : "No results.")}
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedForms.map((f, i) => (
                       <tr
                         key={f.id}
                         onClick={() => canEdit && openEditForm(f)}
                         className={`border-b border-[#E5E7EB] ${i % 2 === 0 ? "bg-white" : "bg-[#F8F9FA]"} hover:bg-[#EEF2FF] transition-colors ${canEdit ? "cursor-pointer" : ""}`}
                       >
-                        <td className="px-4 py-3 text-center text-[#1A1A2E] font-medium border-r border-[#E5E7EB]">{f.rule_no || "—"}</td>
-                        <td className="px-4 py-3 text-[#1A1A2E] border-r border-[#E5E7EB]">{f.rule_heading}</td>
                         <td className="px-4 py-3 text-center text-[#6B7280] border-r border-[#E5E7EB]">{f.form_no || "—"}</td>
+                        <td className="px-4 py-3 text-[#1A1A2E] border-r border-[#E5E7EB]">{f.rule_heading}</td>
+                        <td className="px-4 py-3 text-center text-[#1A1A2E] font-medium border-r border-[#E5E7EB]">{f.rule_no || "—"}</td>
                         <td className="px-4 py-3 text-center text-[#6B7280] border-r border-[#E5E7EB]">{f.page_no || "—"}</td>
-                        <td className="px-4 py-3 text-center border-r border-[#E5E7EB]" onClick={(e) => e.stopPropagation()}>
-                          {f.url
-                            ? <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#4A6FA5] hover:text-[#1E3A5F] hover:underline">Click Here</a>
-                            : <span className="text-[#D1D5DB]">—</span>}
-                        </td>
+                        <td className="px-4 py-3 text-center text-[#6B7280] whitespace-nowrap border-r border-[#E5E7EB]">{fmtDate(f.created_at)}</td>
                         <td className="px-4 py-3 text-center border-r border-[#E5E7EB]">
-                          {files.length > 0 ? (
+                          {(f.form_files ?? []).length === 0 ? (
+                            <span className="text-[#9CA3AF] text-xs">—</span>
+                          ) : (
                             <div className="inline-flex items-center gap-1.5 text-[#4A6FA5]">
                               <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                               </svg>
-                              <span className="text-xs font-semibold">{files.length}</span>
+                              <span className="text-xs font-semibold">{(f.form_files ?? []).length}</span>
                             </div>
-                          ) : (
-                            <span className="text-[#D1D5DB]">—</span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-center border-r border-[#E5E7EB]" onClick={(e) => e.stopPropagation()}>
+                          {f.url
+                            ? <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#4A6FA5] hover:text-[#1E3A5F] hover:underline">Click Here</a>
+                            : <span className="text-[#D1D5DB]">—</span>}
                         </td>
                         <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-0.5">
@@ -699,39 +764,74 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                           </div>
                         </td>
                       </tr>
-                    );
-                  })
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* Pagination */}
+          <div className="mt-1 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 text-sm text-[#6B7280]">
+              <span>Showing {frmFrom}–{frmTo} of {frmTotal} form{frmTotal !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">Show</span>
+                <select value={frmPerPage} onChange={(e) => { setFrmPerPage(Number(e.target.value)); setFrmPage(1); }}
+                  className="px-2 py-1 text-sm border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]">
+                  {PER_PAGE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span className="text-xs">per page</span>
+              </div>
+            </div>
+            {frmTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setFrmPage(p => Math.max(1, p - 1))} disabled={frmPageSafe === 1}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">← Prev</button>
+                {pageNums(frmPageSafe, frmTotalPages).map((p, i) =>
+                  p === "..." ? <span key={`e${i}`} className="px-1 text-[#9CA3AF] text-sm select-none">…</span>
+                  : <button key={p} onClick={() => setFrmPage(p as number)} className={btnPage(p === frmPageSafe)}>{p}</button>
                 )}
-              </tbody>
-            </table>
+                <button onClick={() => setFrmPage(p => Math.min(frmTotalPages, p + 1))} disabled={frmPageSafe === frmTotalPages}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ── TAB: TEMPLATES ── */}
       {activeTab === "templates" && (
-        <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] w-44 border-r border-[#E5E7EB]">Template Name</th>
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Description</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Size</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28 border-r border-[#E5E7EB]">Uploaded</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {templates.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-[#6B7280]">
-                      No templates uploaded yet.{canEdit && " Click \"Upload Template\" to get started."}
-                    </td>
+        <div className="space-y-3">
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input type="text" value={tplSearch} onChange={(e) => { setTplSearch(e.target.value); setTplPage(1); }}
+              placeholder="Search template name or description…"
+              className="w-full pl-9 pr-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] bg-white" />
+          </div>
+          <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] w-44 border-r border-[#E5E7EB]">Template Name</th>
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Description</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-24 border-r border-[#E5E7EB]">Size</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-32 border-r border-[#E5E7EB]">Uploaded on</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
                   </tr>
-                ) : (
-                  templates.map((t, i) => {
-                    return (
+                </thead>
+                <tbody>
+                  {pagedTemplates.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-12 text-center text-[#6B7280]">
+                        {tplSearch ? `No results for "${tplSearch}"` : (templates.length === 0 ? `No templates uploaded yet.${canEdit ? " Click \"Upload Template\" to get started." : ""}` : "No results.")}
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedTemplates.map((t, i) => (
                       <tr
                         key={t.id}
                         onClick={() => window.open(t.file_url, "_blank")}
@@ -766,79 +866,144 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                           </div>
                         </td>
                       </tr>
-                    );
-                  })
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* Pagination */}
+          <div className="mt-1 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 text-sm text-[#6B7280]">
+              <span>Showing {tplFrom}–{tplTo} of {tplTotal} template{tplTotal !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">Show</span>
+                <select value={tplPerPage} onChange={(e) => { setTplPerPage(Number(e.target.value)); setTplPage(1); }}
+                  className="px-2 py-1 text-sm border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]">
+                  {PER_PAGE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span className="text-xs">per page</span>
+              </div>
+            </div>
+            {tplTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setTplPage(p => Math.max(1, p - 1))} disabled={tplPageSafe === 1}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">← Prev</button>
+                {pageNums(tplPageSafe, tplTotalPages).map((p, i) =>
+                  p === "..." ? <span key={`e${i}`} className="px-1 text-[#9CA3AF] text-sm select-none">…</span>
+                  : <button key={p} onClick={() => setTplPage(p as number)} className={btnPage(p === tplPageSafe)}>{p}</button>
                 )}
-              </tbody>
-            </table>
+                <button onClick={() => setTplPage(p => Math.min(tplTotalPages, p + 1))} disabled={tplPageSafe === tplTotalPages}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ── TAB: RESOURCES ── */}
       {activeTab === "resources" && (
-        <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] w-44 border-r border-[#E5E7EB]">Act</th>
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Description</th>
-                  <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] w-36 border-r border-[#E5E7EB]">Author</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-20 border-r border-[#E5E7EB]">Files</th>
-                  <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resources.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-[#6B7280]">
-                      No resources added yet.{canEdit && " Click \"Add Resource\" to get started."}
-                    </td>
+        <div className="space-y-3">
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input type="text" value={resSearch} onChange={(e) => { setResSearch(e.target.value); setResPage(1); }}
+              placeholder="Search act, description, author, uploaded on…"
+              className="w-full pl-9 pr-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F] bg-white" />
+          </div>
+          <div className="bg-white border border-[#E5E7EB] rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#D1D9E6] border-b-2 border-[#B0BDD0]">
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] w-44 border-r border-[#E5E7EB]">Act</th>
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] border-r border-[#E5E7EB]">Description</th>
+                    <th className="text-left px-4 py-3 font-semibold text-[#1A1A2E] w-36 border-r border-[#E5E7EB]">Author</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-32 border-r border-[#E5E7EB]">Uploaded on</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-20 border-r border-[#E5E7EB]">Files</th>
+                    <th className="text-center px-4 py-3 font-semibold text-[#1A1A2E] w-28">Actions</th>
                   </tr>
-                ) : (
-                  resources.map((r, i) => (
-                    <tr
-                      key={r.id}
-                      onClick={() => canEdit && openEditResource(r)}
-                      className={`border-b border-[#E5E7EB] last:border-0 ${canEdit ? "cursor-pointer" : ""} ${i % 2 === 0 ? "bg-white" : "bg-[#F8F9FA]"} hover:bg-[#EEF2FF] transition-colors`}
-                    >
-                      <td className="px-4 py-3 font-medium text-[#1A1A2E] border-r border-[#E5E7EB] truncate max-w-0">{r.act?.name ?? "—"}</td>
-                      <td className="px-4 py-3 text-[#6B7280] border-r border-[#E5E7EB] truncate">{r.description}</td>
-                      <td className="px-4 py-3 text-[#6B7280] border-r border-[#E5E7EB]">{r.author ?? "—"}</td>
-                      <td className="px-4 py-3 text-center border-r border-[#E5E7EB]">
-                        {(r.resource_files ?? []).length === 0 ? (
-                          <span className="text-[#9CA3AF] text-xs">—</span>
-                        ) : (
-                          <div className="inline-flex items-center gap-1.5 text-[#4A6FA5]">
-                            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                            </svg>
-                            <span className="text-xs font-semibold">{(r.resource_files ?? []).length}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-0.5">
-                          {canEdit && (
-                            <button onClick={() => openEditResource(r)} title="Edit resource"
-                              className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button onClick={() => setConfirmDeleteRes(r)} title="Delete resource"
-                              className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-500 hover:text-red-700 inline-flex">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                          )}
-                        </div>
+                </thead>
+                <tbody>
+                  {pagedResources.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-[#6B7280]">
+                        {resSearch ? `No results for "${resSearch}"` : (resources.length === 0 ? `No resources added yet.${canEdit ? " Click \"Add Resource\" to get started." : ""}` : "No results.")}
                       </td>
                     </tr>
-                  ))
+                  ) : (
+                    pagedResources.map((r, i) => (
+                      <tr
+                        key={r.id}
+                        onClick={() => canEdit && openEditResource(r)}
+                        className={`border-b border-[#E5E7EB] last:border-0 ${canEdit ? "cursor-pointer" : ""} ${i % 2 === 0 ? "bg-white" : "bg-[#F8F9FA]"} hover:bg-[#EEF2FF] transition-colors`}
+                      >
+                        <td className="px-4 py-3 font-medium text-[#1A1A2E] border-r border-[#E5E7EB] truncate max-w-0">{r.act?.name ?? "—"}</td>
+                        <td className="px-4 py-3 text-[#6B7280] border-r border-[#E5E7EB] truncate">{r.description}</td>
+                        <td className="px-4 py-3 text-[#6B7280] border-r border-[#E5E7EB]">{r.author ?? "—"}</td>
+                        <td className="px-4 py-3 text-center text-[#6B7280] whitespace-nowrap border-r border-[#E5E7EB]">{fmtDate(r.created_at)}</td>
+                        <td className="px-4 py-3 text-center border-r border-[#E5E7EB]">
+                          {(r.resource_files ?? []).length === 0 ? (
+                            <span className="text-[#9CA3AF] text-xs">—</span>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 text-[#4A6FA5]">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                              <span className="text-xs font-semibold">{(r.resource_files ?? []).length}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-0.5">
+                            {canEdit && (
+                              <button onClick={() => openEditResource(r)} title="Edit resource"
+                                className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button onClick={() => setConfirmDeleteRes(r)} title="Delete resource"
+                                className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-500 hover:text-red-700 inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* Pagination */}
+          <div className="mt-1 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 text-sm text-[#6B7280]">
+              <span>Showing {resFrom}–{resTo} of {resTotal} resource{resTotal !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">Show</span>
+                <select value={resPerPage} onChange={(e) => { setResPerPage(Number(e.target.value)); setResPage(1); }}
+                  className="px-2 py-1 text-sm border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]">
+                  {PER_PAGE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span className="text-xs">per page</span>
+              </div>
+            </div>
+            {resTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setResPage(p => Math.max(1, p - 1))} disabled={resPageSafe === 1}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">← Prev</button>
+                {pageNums(resPageSafe, resTotalPages).map((p, i) =>
+                  p === "..." ? <span key={`e${i}`} className="px-1 text-[#9CA3AF] text-sm select-none">…</span>
+                  : <button key={p} onClick={() => setResPage(p as number)} className={btnPage(p === resPageSafe)}>{p}</button>
                 )}
-              </tbody>
-            </table>
+                <button onClick={() => setResPage(p => Math.min(resTotalPages, p + 1))} disabled={resPageSafe === resTotalPages}
+                  className="h-9 px-3 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+              </div>
+            )}
           </div>
         </div>
       )}

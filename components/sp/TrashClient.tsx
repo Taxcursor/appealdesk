@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -45,14 +44,16 @@ function RowActions({
   const router = useRouter();
   const [busy, setBusy] = useState<"restore" | "purge" | null>(null);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleRestore() {
+    setError(null);
     setBusy("restore");
     try {
       await onRestore();
       router.refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to restore.");
+      setError(err instanceof Error ? err.message : "Failed to restore.");
     } finally {
       setBusy(null);
     }
@@ -60,12 +61,13 @@ function RowActions({
 
   async function handlePurge() {
     if (!confirmPurge) { setConfirmPurge(true); return; }
+    setError(null);
     setBusy("purge");
     try {
       await onPurge();
       router.refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete.");
+      setError(err instanceof Error ? err.message : "Failed to delete.");
     } finally {
       setBusy(null);
       setConfirmPurge(false);
@@ -73,25 +75,30 @@ function RowActions({
   }
 
   return (
-    <div className="flex items-center gap-0.5 flex-shrink-0">
-      <button onClick={handleRestore} disabled={!!busy} title="Restore item"
-        className="p-1.5 rounded hover:bg-[#EEF2FF] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] disabled:opacity-50 inline-flex">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-      </button>
-      {confirmPurge ? (
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-red-600 font-medium">Sure?</span>
-          <button onClick={handlePurge} disabled={!!busy}
-            className="px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50">
-            {busy === "purge" ? "…" : "Yes"}
-          </button>
-          <button onClick={() => setConfirmPurge(false)} className="px-1.5 py-1 text-xs text-[#6B7280] hover:text-[#1A1A2E]">No</button>
-        </div>
-      ) : (
-        <button onClick={handlePurge} disabled={!!busy} title="Delete permanently"
-          className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-500 hover:text-red-700 disabled:opacity-50 inline-flex">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button onClick={handleRestore} disabled={!!busy} title="Restore item"
+          className="p-1.5 rounded hover:bg-[#EEF2FF] transition-colors text-[#4A6FA5] hover:text-[#1E3A5F] disabled:opacity-50 inline-flex">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
         </button>
+        {confirmPurge ? (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-red-600 font-medium">Sure?</span>
+            <button onClick={handlePurge} disabled={!!busy}
+              className="px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50">
+              {busy === "purge" ? "…" : "Yes"}
+            </button>
+            <button onClick={() => setConfirmPurge(false)} className="px-1.5 py-1 text-xs text-[#6B7280] hover:text-[#1A1A2E]">No</button>
+          </div>
+        ) : (
+          <button onClick={handlePurge} disabled={!!busy} title="Delete permanently"
+            className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-500 hover:text-red-700 disabled:opacity-50 inline-flex">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          </button>
+        )}
+      </div>
+      {error && (
+        <span role="alert" title={error} className="text-xs text-[#DC2626] font-medium max-w-[200px] truncate">{error}</span>
       )}
     </div>
   );
@@ -237,6 +244,7 @@ export default function TrashClient({ appeals, clients, users, documents, procee
                 </p>
                 <p className="text-xs text-[#6B7280] truncate">
                   {p.proceeding_type?.name ?? ""}
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {(p as any).appeal?.client_org?.name ? ` · ${(p as any).appeal.client_org.name}` : ""}
                 </p>
                 <p className="text-xs text-[#9CA3AF]">Deleted {fmtDate(p.deleted_at)}</p>
@@ -264,6 +272,7 @@ export default function TrashClient({ appeals, clients, users, documents, procee
                 </p>
                 <p className="text-xs text-[#6B7280] truncate">
                   {e.description ?? ""}
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {(e as any).proceeding?.appeal?.client_org?.name
                     ? ` · ${(e as any).proceeding.appeal.client_org.name}`
                     : ""}

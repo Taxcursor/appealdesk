@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createServiceClient } from "@/lib/supabase/server";
 import LoginForm from "./LoginForm";
 
@@ -27,11 +28,13 @@ export default async function LoginPage() {
   }
 
   return (
-    <LoginForm
-      platformName={platformName}
-      description={description}
-      logoUrl={logoUrl}
-      supportEmail={supportEmail}
-    />
+    <Suspense fallback={null}>
+      <LoginForm
+        platformName={platformName}
+        description={description}
+        logoUrl={logoUrl}
+        supportEmail={supportEmail}
+      />
+    </Suspense>
   );
 }
