@@ -12,6 +12,8 @@ export default async function SpLayout({ children }: { children: React.ReactNode
     redirect("/platform/dashboard");
   }
 
+  if (user.must_change_password) redirect("/auth/change-password");
+
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createClient();
   const { data: org } = await supabase

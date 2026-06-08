@@ -8,6 +8,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   if (!user) redirect("/login");
   if (user.role !== "super_admin" && user.role !== "platform_admin") redirect("/dashboard");
 
+  if (user.must_change_password) redirect("/auth/change-password");
+
   const supabase = await createClient();
   const { data: settings } = await supabase
     .from("platform_settings")

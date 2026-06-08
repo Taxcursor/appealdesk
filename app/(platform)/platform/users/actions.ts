@@ -13,6 +13,7 @@ export interface SpAdminFullInput {
   middle_name?: string;
   last_name: string;
   email: string;
+  password: string;
   // Contact
   mobile_country_code?: string;
   mobile_number?: string;
@@ -63,14 +64,12 @@ export async function createPlatformSpAdmin(spId: string, input: SpAdminFullInpu
     .maybeSingle();
   if (existing) throw new Error("A user with this email already exists.");
 
-  // Send invite — user sets their own password via email link
-  const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
-    input.email,
-    {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?type=invite`,
-      data: { role: "sp_admin", sp_id: spId },
-    }
-  );
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { must_change_password: true },
+  });
 
   if (authError) throw new Error(authError.message);
 

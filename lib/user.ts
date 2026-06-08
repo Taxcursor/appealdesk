@@ -40,6 +40,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     last_name: profile.last_name,
     is_active: profile.is_active,
     avatar_url: (profile as unknown as { avatar_url?: string | null }).avatar_url ?? null,
+    must_change_password: user.user_metadata?.must_change_password === true,
   };
   } catch {
     return null;

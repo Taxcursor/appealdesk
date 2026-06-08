@@ -281,4 +281,5 @@ export interface SessionUser {
   last_name: string;
   is_active: boolean;
   avatar_url?: string | null;
+  must_change_password?: boolean;
 }

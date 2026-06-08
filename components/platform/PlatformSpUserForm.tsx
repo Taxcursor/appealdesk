@@ -108,6 +108,7 @@ function AvatarUpload({ value, onChange }: { value: string; onChange: (url: stri
 const BLANK: SpAdminFullInput = {
   first_name: "", middle_name: "", last_name: "",
   email: "",
+  password: "",
   mobile_country_code: "+91", mobile_number: "",
   date_of_birth: "",
   department: "", designation: "",
@@ -121,6 +122,10 @@ const BLANK: SpAdminFullInput = {
 export default function PlatformSpUserForm({ providers }: Props) {
   const [selectedSpId, setSelectedSpId] = useState(providers[0]?.id ?? "");
   const [form, setForm] = useState<SpAdminFullInput>(BLANK);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [locationOther, setLocationOther] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,11 +139,13 @@ export default function PlatformSpUserForm({ providers }: Props) {
     if (!form.first_name.trim()) { setError("First name is required."); return; }
     if (!form.last_name.trim()) { setError("Last name is required."); return; }
     if (!form.email.trim()) { setError("Email is required."); return; }
+    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match."); return; }
 
     setSaving(true);
     setError(null);
     try {
-      await createPlatformSpAdmin(selectedSpId, form);
+      await createPlatformSpAdmin(selectedSpId, { ...form, password });
       window.location.href = "/platform/users";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create user.");
@@ -209,6 +216,23 @@ export default function PlatformSpUserForm({ providers }: Props) {
 
           <Field label="Email" required>
             <input type="email" value={form.email} onChange={(e) => set("email")(e.target.value)} className={inp} />
+          </Field>
+
+          <Field label="Password" required>
+            <div className="relative">
+              <input type={showPassword ? "text" : "password"} value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Min. 8 characters" className={inp} autoComplete="new-password" />
+              <EyeBtn visible={showPassword} toggle={() => setShowPassword(!showPassword)} />
+            </div>
+          </Field>
+          <Field label="Confirm Password" required>
+            <div className="relative">
+              <input type={showConfirmPassword ? "text" : "password"} value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat password" className={inp} autoComplete="new-password" />
+              <EyeBtn visible={showConfirmPassword} toggle={() => setShowConfirmPassword(!showConfirmPassword)} />
+            </div>
           </Field>
 
           <Field label="Date of Birth">
@@ -304,7 +328,7 @@ export default function PlatformSpUserForm({ providers }: Props) {
         </button>
         <button type="submit" disabled={saving}
           className="px-5 py-2.5 text-sm bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium transition disabled:opacity-60">
-          {saving ? "Sending invite…" : "Send Invite"}
+          {saving ? "Creating user…" : "Create User"}
         </button>
       </div>
     </form>

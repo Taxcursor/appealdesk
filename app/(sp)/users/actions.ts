@@ -10,6 +10,7 @@ export interface UserInput {
   middle_name?: string;
   last_name: string;
   email: string;
+  password: string;
   role: "sp_admin" | "sp_staff" | "client";
   client_org_id?: string;
   // Contact
@@ -47,14 +48,12 @@ export async function createUser(input: UserInput) {
   const { data: existing } = await supabase.from("users").select("id").eq("email", input.email.toLowerCase().trim()).maybeSingle();
   if (existing) throw new Error("A user with this email already exists.");
 
-  // Send invite — user sets their own password via email link
-  const { data: created, error: createError } = await supabase.auth.admin.inviteUserByEmail(
-    input.email,
-    {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?type=invite`,
-      data: { role: input.role },
-    }
-  );
+  const { data: created, error: createError } = await supabase.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { must_change_password: true },
+  });
 
   if (createError) throw new Error(createError.message);
 

@@ -9,6 +9,7 @@ export interface AdminInput {
   middle_name?: string;
   last_name: string;
   email: string;
+  password: string;
   role: "super_admin" | "platform_admin";
   // Contact
   mobile_country_code?: string;
@@ -45,14 +46,12 @@ export async function createPlatformAdmin(input: AdminInput) {
   const { data: existing } = await supabase.from("users").select("id").eq("email", input.email.toLowerCase().trim()).maybeSingle();
   if (existing) throw new Error("A user with this email already exists.");
 
-  // Send invite — user sets their own password via email link
-  const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
-    input.email,
-    {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?type=invite`,
-      data: { role: input.role },
-    }
-  );
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { must_change_password: true },
+  });
 
   if (authError) throw new Error(authError.message);
 
