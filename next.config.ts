@@ -14,16 +14,14 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   images: {
     remotePatterns: [
-<<<<<<< HEAD
       ...(supabaseHostname
         ? [{ protocol: "https" as const, hostname: supabaseHostname }]
-        : []),
-=======
-      {
-        protocol: "https",
-        hostname: "ulctjnzadowpxcxpnwdz.supabase.co",
-      },
->>>>>>> 73023ddd6d99bd0310883e5a6040ce38cc4b88fe
+        : [
+            {
+              protocol: "https" as const,
+              hostname: "ulctjnzadowpxcxpnwdz.supabase.co",
+            },
+          ]),
     ],
   },
 };
