@@ -49,6 +49,7 @@ export default function BulkImportClient({ clientOrgs }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleDownloadTemplate(type: ImportType) {
+    setParseError(null);
     setLoading(true);
     try {
       if (type === "clients") await downloadClientTemplate();
@@ -122,6 +123,7 @@ export default function BulkImportClient({ clientOrgs }: Props) {
       return;
     }
 
+    setLoading(true);
     setStep("importing");
     try {
       let count = 0;
@@ -146,6 +148,8 @@ export default function BulkImportClient({ clientOrgs }: Props) {
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Import failed");
       setStep("preview");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -297,7 +301,7 @@ export default function BulkImportClient({ clientOrgs }: Props) {
                   const row = vr.row;
                   return (
                     <tr
-                      key={idx}
+                      key={vr.row.rowNumber}
                       className={isError ? "bg-red-50" : "bg-green-50"}
                     >
                       <td className="px-3 py-2 text-xs text-[#6B7280] border-b border-[#E5E7EB]">
@@ -344,10 +348,8 @@ export default function BulkImportClient({ clientOrgs }: Props) {
                         </>
                       )}
                       <td className="px-3 py-2 text-xs border-b border-[#E5E7EB]">
-                        {isError ? (
-                          <span className="text-[#DC2626]">
-                            {(vr as { row: AnyRow; status: "error"; error: string }).error}
-                          </span>
+                        {vr.status === "error" ? (
+                          <span className="text-[#DC2626]">{vr.error}</span>
                         ) : (
                           <span className="text-[#16A34A]">Valid</span>
                         )}
@@ -375,6 +377,7 @@ export default function BulkImportClient({ clientOrgs }: Props) {
                 value={defaultPassword}
                 onChange={(e) => setDefaultPassword(e.target.value)}
                 placeholder="Min. 8 characters"
+                maxLength={128}
                 className="w-full px-3 py-2 text-sm border-2 border-[#4A6FA5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]"
               />
             </div>
@@ -390,7 +393,7 @@ export default function BulkImportClient({ clientOrgs }: Props) {
             </button>
             <button
               onClick={handleImport}
-              disabled={validRows.length === 0}
+              disabled={validRows.length === 0 || loading}
               className="px-5 py-2 text-sm bg-[#1E3A5F] hover:bg-[#162d4a] text-white rounded-lg font-medium transition disabled:opacity-60"
             >
               Import {validRows.length} valid rows
