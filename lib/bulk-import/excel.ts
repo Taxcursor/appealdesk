@@ -86,6 +86,8 @@ function getCellText(row: any, col: number): string {
   if (typeof v === "object" && "result" in v) return String((v as any).result ?? "").trim();
   if (typeof v === "object" && "richText" in v)
     return ((v as any).richText ?? []).map((r: any) => r.text ?? "").join("").trim();
+  // ExcelJS returns hyperlinks (e.g. mailto: email cells) as { text, hyperlink }
+  if (typeof v === "object" && "text" in v) return String((v as any).text ?? "").trim();
   return String(v).trim();
 }
 
@@ -144,6 +146,7 @@ export async function downloadTeamUserTemplate(): Promise<void> {
     { header: "Role *", key: "role", width: 14 },
     { header: "Middle Name", key: "mn", width: 18 },
     { header: "Mobile Number", key: "mob", width: 18 },
+    { header: "Mobile Country Code (default +91)", key: "mcc", width: 28 },
     { header: "Date of Birth (DD/MM/YYYY)", key: "dob", width: 26 },
     { header: "Department", key: "dept", width: 20 },
     { header: "Designation", key: "desig", width: 20 },
@@ -163,7 +166,7 @@ export async function downloadTeamUserTemplate(): Promise<void> {
 
   const [roleRef, stRef] = buildListsSheet(lists, [ROLES, INDIAN_STATES]);
   addDropdownValidation(data, 4, roleRef);   // col 4 = Role
-  addDropdownValidation(data, 15, stRef);    // col 15 = State
+  addDropdownValidation(data, 16, stRef);    // col 16 = State
 
   triggerDownload(await blobFromWorkbook(wb), "appealdesk-team-users-template.xlsx");
 }
@@ -272,19 +275,20 @@ export async function parseTeamUserFile(file: File): Promise<ParsedTeamUserRow[]
       role: getCellText(row, 4),
       middle_name: getCellText(row, 5) || undefined,
       mobile_number: getCellText(row, 6) || undefined,
-      date_of_birth: getCellText(row, 7) || undefined,
-      department: getCellText(row, 8) || undefined,
-      designation: getCellText(row, 9) || undefined,
-      date_of_joining: getCellText(row, 10) || undefined,
-      date_of_leaving: getCellText(row, 11) || undefined,
-      address_line1: getCellText(row, 12) || undefined,
-      address_line2: getCellText(row, 13) || undefined,
-      city: getCellText(row, 14) || undefined,
-      state: getCellText(row, 15) || undefined,
-      pin_code: getCellText(row, 16) || undefined,
-      country: getCellText(row, 17) || undefined,
-      pan_number: getCellText(row, 18) || undefined,
-      aadhaar_number: getCellText(row, 19) || undefined,
+      mobile_country_code: getCellText(row, 7) || undefined,
+      date_of_birth: getCellText(row, 8) || undefined,
+      department: getCellText(row, 9) || undefined,
+      designation: getCellText(row, 10) || undefined,
+      date_of_joining: getCellText(row, 11) || undefined,
+      date_of_leaving: getCellText(row, 12) || undefined,
+      address_line1: getCellText(row, 13) || undefined,
+      address_line2: getCellText(row, 14) || undefined,
+      city: getCellText(row, 15) || undefined,
+      state: getCellText(row, 16) || undefined,
+      pin_code: getCellText(row, 17) || undefined,
+      country: getCellText(row, 18) || undefined,
+      pan_number: getCellText(row, 19) || undefined,
+      aadhaar_number: getCellText(row, 20) || undefined,
     });
   });
 

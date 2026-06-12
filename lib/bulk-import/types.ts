@@ -43,6 +43,7 @@ export interface ParsedTeamUserRow {
   role: string;
   middle_name?: string;
   mobile_number?: string;
+  mobile_country_code?: string;
   date_of_birth?: string;
   department?: string;
   designation?: string;

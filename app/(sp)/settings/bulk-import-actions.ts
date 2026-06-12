@@ -312,7 +312,7 @@ export async function importBulkTeamUsers(
       email: row.email.toLowerCase().trim(),
       role: row.role,
       org_id: user.org_id!,
-      mobile_country_code: "+91",
+      mobile_country_code: row.mobile_country_code?.trim() || "+91",
       mobile_number: row.mobile_number || null,
       date_of_birth: toPgDate(row.date_of_birth),
       department: row.department || null,
