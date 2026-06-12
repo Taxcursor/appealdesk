@@ -76,18 +76,25 @@ function triggerDownload(blob: Blob, filename: string) {
 
 function getCellText(row: any, col: number): string {
   const cell = row.getCell(col);
-  const v = cell.value;
+  // Unwrap formula result first — formula cells are { formula, result, ... }
+  // result itself may be a hyperlink object { text, hyperlink }
+  let v: unknown = cell.value;
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object" && v !== null && "result" in (v as any))
+    v = (v as any).result ?? null;
   if (v === null || v === undefined) return "";
   if (v instanceof Date) {
     const dd = String(v.getDate()).padStart(2, "0");
     const mm = String(v.getMonth() + 1).padStart(2, "0");
     return `${dd}/${mm}/${v.getFullYear()}`;
   }
-  if (typeof v === "object" && "result" in v) return String((v as any).result ?? "").trim();
-  if (typeof v === "object" && "richText" in v)
-    return ((v as any).richText ?? []).map((r: any) => r.text ?? "").join("").trim();
-  // ExcelJS returns hyperlinks (e.g. mailto: email cells) as { text, hyperlink }
-  if (typeof v === "object" && "text" in v) return String((v as any).text ?? "").trim();
+  if (typeof v === "object") {
+    const obj = v as Record<string, unknown>;
+    if ("richText" in obj)
+      return ((obj.richText as any[]) ?? []).map((r) => String(r.text ?? "")).join("").trim();
+    if ("text" in obj) return String(obj.text ?? "").trim();
+    return "";
+  }
   return String(v).trim();
 }
 
