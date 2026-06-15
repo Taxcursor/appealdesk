@@ -40,7 +40,6 @@ appealdesk/
 │   │       ├── masters/              # Platform-level master records (acts, FYs, AYs)
 │   │       ├── documents/            # Cross-SP document view
 │   │       ├── logs/                 # Audit log viewer
-│   │       ├── recycle-bin/          # Soft-delete recovery
 │   │       └── settings/             # Platform branding (name, logo, support email)
 │   └── (sp)/                         # SP portal (sp_admin, sp_staff, client)
 │       ├── layout.tsx                # Role guard → redirect if platform role
@@ -51,7 +50,6 @@ appealdesk/
 │       ├── documents/                # Document library: forms, templates, resources
 │       ├── masters/                  # SP-level masters (inherits platform masters)
 │       ├── logs/                     # SP-scoped audit log
-│       ├── trash/                    # SP soft-delete recovery
 │       └── settings/                 # SP branding, address, compliance
 ├── components/
 │   ├── layout/Sidebar.tsx            # Shared sidebar — role-filtered nav, collapse, password change
@@ -65,8 +63,7 @@ appealdesk/
 │   │   ├── DocumentsClient.tsx       # Forms, templates, resources tabs
 │   │   ├── LogsClient.tsx            # Audit log with exportLogs()
 │   │   ├── SpSettingsClient.tsx      # SP settings form
-│   │   ├── SpMastersClient.tsx       # Master records management
-│   │   └── TrashClient.tsx           # Soft-delete recovery
+│   │   └── SpMastersClient.tsx       # Master records management
 │   └── platform/                     # Platform portal client components
 │       ├── ProvidersClient.tsx        # SP list + management
 │       ├── ProviderForm.tsx           # Create/edit SP
@@ -217,9 +214,9 @@ audit_logs       — Immutable append-only log (no UPDATE/DELETE policies by des
 platform_settings — Single-row platform config (platform_name, logo_url, description)
 ```
 
-### Soft Deletes — Critical Rule
+### Hard Deletes — Critical Rule
 
-Every entity has `deleted_at timestamptz`. **Always** add `.is("deleted_at", null)` to list queries. **Never** hard-delete — set `deleted_at = now()`. Partial indexes exist on all `deleted_at` columns for performance.
+**Always** hard-delete rows using `.delete()` — never use soft-delete. Deleted rows are immediately removed from the database and cannot be restored. Ensure cascade delete logic is configured on foreign keys so parent deletions properly remove child records.
 
 ---
 
@@ -323,8 +320,7 @@ const to = from + perPage - 1;
 let query = supabase
   .from("appeals")
   .select("...", { count: "exact" })
-  .eq("service_provider_id", spId)
-  .is("deleted_at", null);
+  .eq("service_provider_id", spId);
 
 if (filterClients.length) query = query.in("client_org_id", filterClients);
 if (filterStatuses.length) query = query.in("status", filterStatuses);
@@ -439,8 +435,8 @@ Keep `lib/theme.ts` in sync with `globals.css` when tokens change.
 ## Critical Engineering Rules
 
 1. **Always** include `.eq("service_provider_id", spId)` on SP-scoped queries
-2. **Always** include `.is("deleted_at", null)` on list queries
-3. **Never** hard-delete rows — set `deleted_at = now()`
+2. **Always** hard-delete rows with `.delete()` — never use soft-delete; deleted rows are permanent and unrecoverable
+3. **Always** configure cascade delete on foreign keys to maintain referential integrity during deletions
 4. **Never** use `createServiceClient()` in Server Components/pages — only in Server Actions
 5. **Never** skip `getCurrentUser()` + role check in Server Actions
 6. **Always** call `revalidatePath()` after mutations to clear Next.js cache

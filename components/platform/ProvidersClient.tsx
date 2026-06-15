@@ -491,8 +491,9 @@ export default function ProvidersClient({ providers, userRole }: Props) {
               <div>
                 <h3 className="text-base font-semibold text-heading">Delete Service Provider?</h3>
                 <p className="text-sm text-secondary mt-1">
-                  <span className="font-medium text-heading">&quot;{deleteConfirm.name}&quot;</span> and all its users will be removed. This can be recovered from the Recycle Bin.
+                  This will permanently delete <span className="font-medium text-heading">&quot;{deleteConfirm.name}&quot;</span> and all its users and associated data.
                 </p>
+                <p className="text-xs text-red-600 font-medium mt-2">This action cannot be undone.</p>
               </div>
             </div>
 

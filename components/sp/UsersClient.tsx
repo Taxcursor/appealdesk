@@ -462,9 +462,10 @@ export default function UsersClient({
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl border border-[#E5E7EB] p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-[#1A1A2E] mb-2">Delete User?</h3>
-            <p className="text-sm text-[#6B7280] mb-5">
-              <strong>{confirmDelete.name}</strong> will be permanently deleted and lose all access. This cannot be undone.
+            <p className="text-sm text-[#6B7280] mb-2">
+              This will permanently delete <strong>{confirmDelete.name}</strong> and revoke their access.
             </p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)}
                 className="flex-1 px-4 py-2 text-sm border border-[#E5E7EB] rounded-lg text-[#1A1A2E] hover:bg-[#F8F9FA] transition">

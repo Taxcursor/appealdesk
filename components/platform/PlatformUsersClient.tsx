@@ -547,11 +547,11 @@ export default function PlatformUsersClient({ platformUsers, spAdmins, currentUs
       {sConfirmDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl border border-border p-6 w-full max-w-sm mx-4">
-            <h3 className="text-base font-semibold text-heading mb-2">Delete SP User?</h3>
+            <h3 className="text-base font-semibold text-heading mb-2">Delete User?</h3>
             <p className="text-sm text-secondary mb-2">
-              <strong>{sConfirmDelete.name}</strong> will be permanently deleted and lose all access.
+              This will permanently delete <strong>{sConfirmDelete.name}</strong> and revoke their access.
             </p>
-            <p className="text-xs text-red-600 font-medium mb-5">This cannot be undone.</p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setSConfirmDelete(null)} className="flex-1 px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button onClick={handleSpDelete} disabled={!!sDeleting}

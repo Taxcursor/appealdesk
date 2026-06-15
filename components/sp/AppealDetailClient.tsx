@@ -2189,9 +2189,9 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
           <div className="bg-white rounded-xl shadow-xl border border-border w-full max-w-sm p-6">
             <h3 className="text-base font-semibold text-heading mb-2">Delete Proceeding?</h3>
             <p className="text-sm text-secondary mb-1">
-              This will also delete all <strong>{confirmDeleteProc.events.length} event{confirmDeleteProc.events.length !== 1 ? "s" : ""}</strong> under this proceeding.
+              This will permanently delete the proceeding and all its <strong>{confirmDeleteProc.events.length} event{confirmDeleteProc.events.length !== 1 ? "s" : ""}</strong> and documents.
             </p>
-            <p className="text-xs text-muted mb-5">Deleted items move to Trash and can be restored within 30 days.</p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDeleteProc(null)}
@@ -2217,9 +2217,10 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl border border-border w-full max-w-sm p-6">
             <h3 className="text-base font-semibold text-heading mb-2">Delete Event?</h3>
-            <p className="text-sm text-secondary mb-5">
-              Delete <strong>{EVENT_LABELS[confirmDeleteEvent.category] ?? confirmDeleteEvent.category}</strong>? This cannot be undone.
+            <p className="text-sm text-secondary mb-1">
+              This will permanently delete the <strong>{EVENT_LABELS[confirmDeleteEvent.category] ?? confirmDeleteEvent.category}</strong> event and all its documents.
             </p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDeleteEvent(null)}

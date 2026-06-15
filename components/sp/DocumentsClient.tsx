@@ -292,7 +292,8 @@ function FormAttachments({ formId, files, canEdit, canDelete }: { formId: string
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl border border-border p-5 w-full max-w-xs mx-4">
             <h3 className="text-sm font-semibold text-heading mb-1">Delete file?</h3>
-            <p className="text-xs text-secondary mb-4 truncate">&quot;{confirmDelete.file_name}&quot; will be permanently removed.</p>
+            <p className="text-xs text-secondary mb-2 truncate">This will permanently delete &quot;{confirmDelete.file_name}&quot;.</p>
+            <p className="text-xs text-red-600 font-medium mb-4">This action cannot be undone.</p>
             <div className="flex gap-2">
               <button type="button" onClick={() => setConfirmDelete(null)}
                 className="flex-1 px-3 py-1.5 text-xs border border-border rounded-lg text-heading hover:bg-page transition">
@@ -1202,7 +1203,8 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl border border-border p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-heading mb-2">Delete Form?</h3>
-            <p className="text-sm text-secondary mb-5">&quot;{confirmDeleteForm.rule_heading}&quot; will be permanently removed.</p>
+            <p className="text-sm text-secondary mb-2">This will permanently delete &quot;{confirmDeleteForm.rule_heading}&quot; and all its attachments.</p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDeleteForm(null)} className="flex-1 px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button onClick={() => handleDeleteForm(confirmDeleteForm)} disabled={deletingFormId === confirmDeleteForm.id} className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-60">
@@ -1218,7 +1220,8 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl border border-border p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-heading mb-2">Delete Template?</h3>
-            <p className="text-sm text-secondary mb-5">&quot;{confirmDeleteTpl.name}&quot; will be permanently removed.</p>
+            <p className="text-sm text-secondary mb-2">This will permanently delete the template &quot;{confirmDeleteTpl.name}&quot;.</p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDeleteTpl(null)} className="flex-1 px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button onClick={() => handleDeleteTemplate(confirmDeleteTpl)} disabled={deletingTplId === confirmDeleteTpl.id} className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-60">
@@ -1358,7 +1361,8 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl border border-border p-6 w-full max-w-sm mx-4">
             <h3 className="text-base font-semibold text-heading mb-2">Delete Resource?</h3>
-            <p className="text-sm text-secondary mb-5">This resource and all its files will be permanently removed.</p>
+            <p className="text-sm text-secondary mb-2">This will permanently delete this resource and all its attached files.</p>
+            <p className="text-xs text-red-600 font-medium mb-5">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDeleteRes(null)} className="flex-1 px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button onClick={() => handleDeleteResource(confirmDeleteRes)} disabled={deletingResId === confirmDeleteRes.id} className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-60">
