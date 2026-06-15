@@ -129,20 +129,18 @@ export async function deleteClient(id: string): Promise<void> {
   if (!user || user.role !== "sp_admin") throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
-  const now = new Date().toISOString();
 
   const { data: delOrgRef } = await supabase.from("organizations").select("name").eq("id", id).single();
   const delOrgName = delOrgRef?.name ?? id;
 
-  // Soft-delete users belonging to this client org
-  await supabase.from("users").update({ deleted_at: now }).eq("org_id", id).is("deleted_at", null);
+  // Hard-delete users belonging to this client org
+  await supabase.from("users").delete().eq("org_id", id);
 
-  // Soft-delete appeals and their children
+  // Hard-delete appeals and their children
   const { data: appeals } = await supabase
     .from("appeals")
     .select("id")
-    .eq("client_org_id", id)
-    .is("deleted_at", null);
+    .eq("client_org_id", id);
 
   if (appeals?.length) {
     const appealIds = appeals.map((a) => a.id);
@@ -150,21 +148,20 @@ export async function deleteClient(id: string): Promise<void> {
     const { data: proceedings } = await supabase
       .from("proceedings")
       .select("id")
-      .in("appeal_id", appealIds)
-      .is("deleted_at", null);
+      .in("appeal_id", appealIds);
 
     if (proceedings?.length) {
       const procIds = proceedings.map((p) => p.id);
-      await supabase.from("events").update({ deleted_at: now }).in("proceeding_id", procIds).is("deleted_at", null);
-      await supabase.from("proceedings").update({ deleted_at: now }).in("id", procIds);
+      await supabase.from("events").delete().in("proceeding_id", procIds);
+      await supabase.from("proceedings").delete().in("id", procIds);
     }
 
-    await supabase.from("appeal_documents").update({ deleted_at: now }).in("appeal_id", appealIds).is("deleted_at", null);
-    await supabase.from("appeals").update({ deleted_at: now }).in("id", appealIds);
+    await supabase.from("appeal_documents").delete().in("appeal_id", appealIds);
+    await supabase.from("appeals").delete().in("id", appealIds);
   }
 
-  // Soft-delete the organisation
-  const { error } = await supabase.from("organizations").update({ deleted_at: now }).eq("id", id);
+  // Hard-delete the organisation
+  const { error } = await supabase.from("organizations").delete().eq("id", id);
   if (error) throw new Error(error.message);
 
   await logAction(supabase, { actorId: user.id, spId: user.org_id!, action: "delete", entityType: "organization", entityLabel: delOrgName });

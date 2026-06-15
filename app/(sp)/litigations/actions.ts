@@ -275,8 +275,6 @@ export async function deleteProceeding(proceedingId: string): Promise<void> {
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const now = new Date().toISOString();
-
   // Fetch label before cascade so we can record it in the log
   const { data: delProcRef } = await supabase.from("proceedings").select("appeal_id").eq("id", proceedingId).single();
   const delProcLabel = delProcRef?.appeal_id ? await buildAppealLabel(supabase, delProcRef.appeal_id) : proceedingId;
@@ -285,18 +283,17 @@ export async function deleteProceeding(proceedingId: string): Promise<void> {
   const { data: events } = await supabase
     .from("events")
     .select("id")
-    .eq("proceeding_id", proceedingId)
-    .is("deleted_at", null);
+    .eq("proceeding_id", proceedingId);
 
   if (events?.length) {
     const evtIds = events.map((e) => e.id);
-    await supabase.from("event_documents").update({ deleted_at: now }).in("event_id", evtIds).is("deleted_at", null);
-    await supabase.from("events").update({ deleted_at: now }).in("id", evtIds);
+    await supabase.from("event_documents").delete().in("event_id", evtIds);
+    await supabase.from("events").delete().in("id", evtIds);
   }
 
-  await supabase.from("proceeding_documents").update({ deleted_at: now }).eq("proceeding_id", proceedingId).is("deleted_at", null);
+  await supabase.from("proceeding_documents").delete().eq("proceeding_id", proceedingId);
 
-  const { error } = await supabase.from("proceedings").update({ deleted_at: now }).eq("id", proceedingId);
+  const { error } = await supabase.from("proceedings").delete().eq("id", proceedingId);
   if (error) throw new Error(error.message);
 
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "delete", entityType: "proceeding", entityLabel: delProcLabel });
@@ -310,13 +307,12 @@ export async function deleteEvent(eventId: string): Promise<void> {
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const now = new Date().toISOString();
   const { data: evtRef } = await supabase.from("events").select("category").eq("id", eventId).single();
   const evtLabel = evtRef?.category ? EVENT_CATEGORY_LABELS[evtRef.category] ?? evtRef.category : eventId;
 
-  await supabase.from("event_documents").update({ deleted_at: now }).eq("event_id", eventId).is("deleted_at", null);
+  await supabase.from("event_documents").delete().eq("event_id", eventId);
 
-  const { error } = await supabase.from("events").update({ deleted_at: now }).eq("id", eventId);
+  const { error } = await supabase.from("events").delete().eq("id", eventId);
   if (error) throw new Error(error.message);
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "delete", entityType: "event", entityLabel: evtLabel });
   revalidatePath("/litigations");
@@ -329,14 +325,12 @@ export async function deleteAppeal(appealId: string): Promise<void> {
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const now = new Date().toISOString();
   const delAppealLabel = await buildAppealLabel(supabase, appealId);
 
   const { data: proceedings } = await supabase
     .from("proceedings")
     .select("id")
-    .eq("appeal_id", appealId)
-    .is("deleted_at", null);
+    .eq("appeal_id", appealId);
 
   if (proceedings?.length) {
     const procIds = proceedings.map((p) => p.id);
@@ -344,23 +338,22 @@ export async function deleteAppeal(appealId: string): Promise<void> {
     const { data: events } = await supabase
       .from("events")
       .select("id")
-      .in("proceeding_id", procIds)
-      .is("deleted_at", null);
+      .in("proceeding_id", procIds);
 
     if (events?.length) {
       const evtIds = events.map((e) => e.id);
-      await supabase.from("event_documents").update({ deleted_at: now }).in("event_id", evtIds).is("deleted_at", null);
-      await supabase.from("events").update({ deleted_at: now }).in("id", evtIds);
+      await supabase.from("event_documents").delete().in("event_id", evtIds);
+      await supabase.from("events").delete().in("id", evtIds);
     }
 
-    await supabase.from("proceeding_documents").update({ deleted_at: now }).in("proceeding_id", procIds).is("deleted_at", null);
-    await supabase.from("proceedings").update({ deleted_at: now }).in("id", procIds);
+    await supabase.from("proceeding_documents").delete().in("proceeding_id", procIds);
+    await supabase.from("proceedings").delete().in("id", procIds);
   }
 
   // Legacy appeal_documents (kept for any existing data)
-  await supabase.from("appeal_documents").update({ deleted_at: now }).eq("appeal_id", appealId).is("deleted_at", null);
+  await supabase.from("appeal_documents").delete().eq("appeal_id", appealId);
 
-  const { error } = await supabase.from("appeals").update({ deleted_at: now }).eq("id", appealId);
+  const { error } = await supabase.from("appeals").delete().eq("id", appealId);
   if (error) throw new Error("Failed to delete appeal: " + error.message);
 
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "delete", entityType: "appeal", entityLabel: delAppealLabel });
@@ -410,7 +403,7 @@ export async function deleteProceedingDocument(docId: string): Promise<void> {
 
   const { error } = await supabase
     .from("proceeding_documents")
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq("id", docId);
 
   if (error) throw new Error(error.message);
@@ -460,7 +453,7 @@ export async function deleteEventDocument(docId: string): Promise<void> {
 
   const { error } = await supabase
     .from("event_documents")
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq("id", docId);
 
   if (error) throw new Error(error.message);

@@ -38,7 +38,7 @@ export async function deleteDocument(documentId: string, appealId: string): Prom
 
   const { error } = await supabase
     .from("appeal_documents")
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq("id", documentId);
   if (error) throw new Error(error.message);
   revalidatePath(`/litigations/${appealId}`);

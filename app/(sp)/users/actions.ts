@@ -229,10 +229,10 @@ export async function deleteUser(id: string) {
   const { data: delUserRef } = await supabase.from("users").select("first_name, last_name, email").eq("id", id).single();
   const delUserName = delUserRef ? `${delUserRef.first_name} ${delUserRef.last_name} (${delUserRef.email})` : id;
 
-  // Soft-delete: mark deleted_at, keep auth user intact
+  // Hard-delete: remove row from database
   const { error } = await supabase
     .from("users")
-    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .delete()
     .eq("id", id);
   if (error) throw new Error(error.message);
 
