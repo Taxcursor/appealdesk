@@ -363,29 +363,36 @@ Upload path conventions:
 declared in the `@theme` block; Tailwind v4 generates utilities from them
 (`bg-primary`, `text-heading`, `border-border`, `ring-accent`, …).
 
-**NEVER hardcode hex in components** — `bg-[#1E3A5F]` is banned. Always use the
+**NEVER hardcode hex in components** — `bg-[#363636]` is banned. Always use the
 token utility. To rebrand, change the hex once in `globals.css` and rebuild.
+
+> **Active palette: TaxVeteran — monochromatic charcoal/white** (migrated 2026-06-13).
+> Source: `brand_designs/taxveteran-colour-palette.docx`. Navy blue is gone — everything is charcoal/gray.
 
 | Token utility suffix  | Purpose                               | Current hex |
 | --------------------- | ------------------------------------- | ----------- |
-| `primary`             | Sidebar, buttons                      | `#1E3A5F`   |
-| `primary-dark`        | Primary hover                         | `#162D4A`   |
-| `accent`              | Input borders, links, icons           | `#4A6FA5`   |
-| `accent-light`        | Hover bg on light surfaces            | `#EEF2FF`   |
-| `accent-faint`        | Event rows (appeal detail)            | `#F8FAFF`   |
-| `accent-tint`         | Proceeding section bg                 | `#EBF1F9`   |
-| `accent-tint-hover`   | Hover on tinted blue surfaces         | `#D8E3F5`   |
-| `page`                | Page background, row hover            | `#F8F9FA`   |
-| `surface`             | Cards, tables (or use `bg-white`)     | `#FFFFFF`   |
-| `surface-hover`       | Neutral hover, tab strips             | `#F3F4F6`   |
-| `stripe`              | Alternating table rows                | `#FAFAFA`   |
-| `heading`             | Headings, table header text           | `#1A1A2E`   |
-| `secondary`           | Body / data-cell text                 | `#6B7280`   |
+| `primary`             | Buttons, active states                | `#363636`   |
+| `primary-dark`        | Primary hover / pressed               | `#2F2F2F`   |
+| `accent`              | Input borders, interactive icons      | `#4A4A4A`   |
+| `accent-light`        | Hover bg on light surfaces            | `#F7F7F7`   |
+| `accent-faint`        | Event rows (appeal detail)            | `#F9F9F9`   |
+| `accent-tint`         | Proceeding section bg                 | `#F0F0F0`   |
+| `accent-tint-hover`   | Hover on tinted surfaces              | `#E8E8E8`   |
+| `sidebar`             | Sidebar background                    | `#363636`   |
+| `sidebar-active`      | Active / hovered nav item             | `#4A4A4A`   |
+| `sidebar-muted`       | Subtitle text on dark sidebar         | `#D6D6D6`   |
+| `sidebar-avatar`      | Avatar tile on dark sidebar           | `#2F2F2F`   |
+| `page`                | Page background                       | `#FFFFFF`   |
+| `surface`             | Cards, tables                         | `#FFFFFF`   |
+| `surface-hover`       | Neutral hover, tab strips             | `#F7F7F7`   |
+| `stripe`              | Alternating table rows                | `#F7F7F7`   |
+| `heading`             | Headings, table header text           | `#111111`   |
+| `secondary`           | Body / data-cell text                 | `#4A4A4A`   |
 | `muted`               | Placeholders, row numbers             | `#9CA3AF`   |
-| `border`              | Default borders, row dividers         | `#E5E7EB`   |
-| `border-strong`       | Emphasized borders                    | `#D1D5DB`   |
-| `table-header`        | thead background                      | `#D1D9E6`   |
-| `table-header-border` | thead bottom border                   | `#B0BDD0`   |
+| `border`              | Default borders, row dividers         | `#C7C7C7`   |
+| `border-strong`       | Emphasized borders                    | `#B0B0B0`   |
+| `table-header`        | thead background (neutral gray)       | `#D2D2D2`   |
+| `table-header-border` | thead bottom border                   | `#B8B8B8`   |
 | `success`             | Success / Favourable / Low importance | `#16A34A`   |
 | `warning`             | Warning / Doubtful / High importance  | `#D97706`   |
 | `warning-light`       | Warning banner background             | `#FFFBEB`   |
@@ -400,7 +407,7 @@ token utility. To rebrand, change the hex once in `globals.css` and rebuild.
 **Standard input:**
 
 ```
-w-full px-3 py-2 text-sm border-2 border-accent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary
+w-full px-3 py-2 text-sm border border-accent rounded-lg focus:outline-none focus:ring-1 focus:ring-primary
 ```
 
 **Primary button:**
