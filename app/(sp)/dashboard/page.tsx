@@ -1,299 +1,138 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/user";
-import Link from "next/link";
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/user'
+import { redirect } from 'next/navigation'
+import { DashboardCalendar } from '@/components/sp/DashboardCalendar'
+import type { CalendarEvent } from '@/lib/calendarUtils'
+import { EVENT_SOURCE_LABELS } from '@/lib/calendarUtils'
 
-const EVENT_LABELS: Record<string, string> = {
-  notice_from_authority: "Notice from Authority",
-  response_to_notice: "Response to Notice",
-  adjournment_request: "Adjournment Request",
-  personal_hearing: "Personal Hearing",
-  virtual_hearing: "Virtual Hearing",
-  personal_follow_up: "Personal Follow-up",
-  assessment_order: "Assessment Order",
-  notice_of_penalty: "Notice of Penalty",
-  penalty_order: "Penalty Order",
-};
-
-function fmtDate(d: string | null) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function daysUntil(d: string): number {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const due = new Date(d); due.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+function extractDate(val: string | null | undefined): string | null {
+  if (!val) return null
+  if (val.includes('T')) {
+    const d = new Date(val)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  return val.slice(0, 10)
 }
 
 export default async function DashboardPage() {
-  const user = await getCurrentUser();
-  const supabase = await createClient();
-  const spId = user?.service_provider_id ?? user?.org_id;
-  const isClient = user?.role === "client";
-  const clientOrgId = isClient ? user?.org_id : null;
+  const user = await getCurrentUser()
+  if (!user) redirect('/login')
+  if (!user.service_provider_id) redirect('/platform/dashboard')
 
-  // Build appeal filter
-  const appealFilter = isClient
-    ? { col: "client_org_id", val: clientOrgId! }
-    : { col: "service_provider_id", val: spId! };
+  const supabase = await createClient()
+  const spId = user.service_provider_id
 
-  const today = new Date().toISOString().split("T")[0];
-  // eslint-disable-next-line react-hooks/purity
-  const in30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const year = new Date().getFullYear()
+  const yearStart = `${year}-01-01`
+  const yearEnd = `${year}-12-31`
 
-  const [
-    { count: totalAppeals },
-    { count: totalClients },
-    { count: totalTeam },
-    { data: proceedings },
-    { data: recentEvents },
-    { count: cntCritical },
-    { count: cntHigh },
-    { count: cntMedium },
-    { count: cntLow },
-    { count: cntFavourable },
-    { count: cntDoubtful },
-    { count: cntUnfavourable },
-  ] = await Promise.all([
-    supabase.from("appeals").select("*", { count: "exact", head: true }).eq(appealFilter.col, appealFilter.val).is("deleted_at", null),
-    isClient
-      ? Promise.resolve({ count: 0 })
-      : supabase.from("organizations").select("*", { count: "exact", head: true })
-          .eq("parent_sp_id", spId!).eq("type", "client").eq("is_active", true).is("deleted_at", null),
-    isClient
-      ? Promise.resolve({ count: 0 })
-      : supabase.from("users").select("*", { count: "exact", head: true })
-          .eq("org_id", spId!).eq("is_active", true).in("role", ["sp_admin", "sp_staff"]).is("deleted_at", null),
-    supabase.from("proceedings").select(`
-      id, importance, possible_outcome, to_be_completed_by, is_active,
-      proceeding_type:master_records!proceeding_type_id(name),
-      assigned_user:users!assigned_to(first_name, last_name),
-      appeal:appeals!appeal_id(
+  const [{ data: procData, error: procError }, { data: evtData, error: evtError }] = await Promise.all([
+    supabase
+      .from('proceedings')
+      .select(`
         id,
-        financial_year:master_records!financial_year_id(name),
-        assessment_year:master_records!assessment_year_id(name),
-        act_regulation:master_records!act_regulation_id(name),
-        client_org:organizations!client_org_id(name)
-      )
-    `).eq("service_provider_id", spId!)
-      .lte("to_be_completed_by", in30)
-      .gte("to_be_completed_by", today)
-      .is("deleted_at", null)
-      .order("to_be_completed_by", { ascending: true })
-      .limit(10),
-    supabase.from("events").select(`
-      id, category, event_date, created_at,
-      proceeding:proceedings!proceeding_id(
-        appeal:appeals!appeal_id(
-          assessment_year, act_regulation,
-          client_org:organizations!client_org_id(name)
+        to_be_completed_by,
+        initiated_on,
+        appeal:appeals!proceedings_appeal_id_fkey (
+          id,
+          client_org:organizations!appeals_client_org_id_fkey ( name ),
+          act_regulation:master_records!appeals_act_regulation_id_fkey ( name ),
+          financial_year:master_records!appeals_financial_year_id_fkey ( name )
+        ),
+        proceeding_type:master_records!proceedings_proceeding_type_id_fkey ( name )
+      `)
+      .eq('service_provider_id', spId)
+      .is('deleted_at', null)
+      .or(
+        `and(to_be_completed_by.gte.${yearStart},to_be_completed_by.lte.${yearEnd}),` +
+        `and(initiated_on.gte.${yearStart},initiated_on.lte.${yearEnd})`
+      ),
+
+    supabase
+      .from('events')
+      .select(`
+        id,
+        event_date,
+        category,
+        proceeding:proceedings!events_proceeding_id_fkey (
+          appeal:appeals!proceedings_appeal_id_fkey (
+            id,
+            client_org:organizations!appeals_client_org_id_fkey ( name ),
+            act_regulation:master_records!appeals_act_regulation_id_fkey ( name ),
+            financial_year:master_records!appeals_financial_year_id_fkey ( name )
+          ),
+          proceeding_type:master_records!proceedings_proceeding_type_id_fkey ( name )
         )
-      )
-    `).eq("service_provider_id", spId!)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(8),
-    // Importance counts — one lightweight count query per value, no rows transferred
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("importance", "critical").is("deleted_at", null),
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("importance", "high").is("deleted_at", null),
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("importance", "medium").is("deleted_at", null),
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("importance", "low").is("deleted_at", null),
-    // Outcome counts
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("possible_outcome", "favourable").is("deleted_at", null),
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("possible_outcome", "doubtful").is("deleted_at", null),
-    isClient ? Promise.resolve({ count: 0 }) : supabase.from("proceedings").select("*", { count: "exact", head: true }).eq("service_provider_id", spId!).eq("possible_outcome", "unfavourable").is("deleted_at", null),
-  ]);
+      `)
+      .eq('service_provider_id', spId)
+      .is('deleted_at', null)
+      .not('event_date', 'is', null)
+      .gte('event_date', yearStart)
+      .lte('event_date', yearEnd),
+  ])
 
-  const importanceCounts = {
-    critical: cntCritical ?? 0,
-    high: cntHigh ?? 0,
-    medium: cntMedium ?? 0,
-    low: cntLow ?? 0,
-  };
-  const outcomeCounts = {
-    favourable: cntFavourable ?? 0,
-    doubtful: cntDoubtful ?? 0,
-    unfavourable: cntUnfavourable ?? 0,
-  };
+  if (procError) console.error('[dashboard] proceedings error:', procError.message)
+  if (evtError) console.error('[dashboard] events error:', evtError.message)
 
-  const upcomingDeadlines = proceedings ?? [];
+  function pick<T>(rel: T | T[] | null | undefined): T | null {
+    if (!rel) return null
+    return Array.isArray(rel) ? (rel[0] ?? null) : rel
+  }
+
+  const events: CalendarEvent[] = []
+
+  for (const p of procData ?? []) {
+    const appeal = pick(p.appeal as any)
+    if (!appeal) continue
+    const clientName: string = pick((appeal as any).client_org)?.name ?? ''
+    const actName: string = pick((appeal as any).act_regulation)?.name ?? ''
+    const fy: string = pick((appeal as any).financial_year)?.name ?? ''
+    const pt: string = pick(p.proceeding_type as any)?.name ?? ''
+    const appealId: string = (appeal as any).id
+
+    const deadline = extractDate(p.to_be_completed_by as string | null)
+    if (deadline) {
+      events.push({ id: p.id, appealId, date: deadline, sourceType: 'deadline', label: EVENT_SOURCE_LABELS['deadline'], clientName, proceedingType: pt, actName, financialYear: fy })
+    }
+    const initiatedOn = extractDate(p.initiated_on as string | null)
+    if (initiatedOn) {
+      events.push({ id: `${p.id}-initiated`, appealId, date: initiatedOn, sourceType: 'initiated_on', label: EVENT_SOURCE_LABELS['initiated_on'], clientName, proceedingType: pt, actName, financialYear: fy })
+    }
+  }
+
+  for (const e of evtData ?? []) {
+    const date = extractDate(e.event_date as string | null)
+    if (!date) continue
+    const proc = pick(e.proceeding as any)
+    if (!proc) continue
+    const appeal = pick((proc as any).appeal)
+    if (!appeal) continue
+    const clientName: string = pick((appeal as any).client_org)?.name ?? ''
+    const actName: string = pick((appeal as any).act_regulation)?.name ?? ''
+    const fy: string = pick((appeal as any).financial_year)?.name ?? ''
+    const pt: string = pick((proc as any).proceeding_type)?.name ?? ''
+    const appealId: string = (appeal as any).id
+    const sourceType = e.category as CalendarEvent['sourceType']
+    events.push({ id: e.id, appealId, date, sourceType, label: EVENT_SOURCE_LABELS[sourceType] ?? String(e.category), clientName, proceedingType: pt, actName, financialYear: fy })
+  }
+
+  const firstName = user.first_name ?? 'there'
+  const subtitle = user.role === 'sp_admin'
+    ? "Here's an overview of your workspace"
+    : "Here's your workload for today"
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-heading">
-          Welcome back, {user?.first_name}
-        </h1>
-        <p className="text-secondary text-sm mt-1">
-          {isClient ? "Here's an overview of your litigations." : "Here's an overview of your workspace."}
-        </p>
+    <div className="p-6 flex flex-col gap-4" style={{ height: 'calc(100vh - 64px)' }}>
+      <div className="flex-shrink-0">
+        <h1 className="text-xl font-bold text-heading">Good morning, {firstName}</h1>
+        <p className="text-sm text-secondary">{subtitle}</p>
       </div>
-
-      {/* Top stat cards */}
-      <div className={`grid gap-4 ${isClient ? "grid-cols-2" : "grid-cols-3"}`}>
-        <Link href="/litigations"
-          className="bg-primary rounded-xl p-6 hover:opacity-90 transition">
-          <p className="text-3xl font-bold text-white">{totalAppeals ?? 0}</p>
-          <p className="text-sm mt-1 text-white/70">{isClient ? "My Litigations" : "Total Litigations"}</p>
-        </Link>
-        {!isClient && (
-          <>
-            <Link href="/clients"
-              className="bg-white border border-border rounded-xl p-6 shadow-sm hover:bg-page transition">
-              <p className="text-3xl font-bold text-heading">{totalClients ?? 0}</p>
-              <p className="text-sm mt-1 text-secondary">Client Organisations</p>
-            </Link>
-            <Link href="/users"
-              className="bg-white border border-border rounded-xl p-6 shadow-sm hover:bg-page transition">
-              <p className="text-3xl font-bold text-heading">{totalTeam ?? 0}</p>
-              <p className="text-sm mt-1 text-secondary">Team Members</p>
-            </Link>
-          </>
-        )}
-        {isClient && (
-          <div className="bg-white border border-border rounded-xl p-6 shadow-sm">
-            <p className="text-3xl font-bold text-heading">{upcomingDeadlines.length}</p>
-            <p className="text-sm mt-1 text-secondary">Deadlines in 30 Days</p>
-          </div>
-        )}
+      <div className="flex-1 min-h-0">
+        <DashboardCalendar events={events} />
       </div>
-
-      {/* Importance & Outcome breakdown (SP only) */}
-      {!isClient && (
-        <div className="grid grid-cols-2 gap-4">
-          {/* Importance */}
-          <div className="bg-white border border-border rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-secondary uppercase tracking-wide mb-3">By Importance</p>
-            <div className="grid grid-cols-4 gap-3">
-              {[
-                { key: "critical" as const, label: "Critical", bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
-                { key: "high" as const, label: "High", bg: "bg-orange-50", text: "text-orange-700", dot: "bg-orange-500" },
-                { key: "medium" as const, label: "Medium", bg: "bg-yellow-50", text: "text-yellow-700", dot: "bg-yellow-500" },
-                { key: "low" as const, label: "Low", bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" },
-              ].map(({ key, label, bg, text, dot }) => (
-                <div key={key} className={`${bg} rounded-lg p-3 text-center`}>
-                  <p className={`text-2xl font-bold ${text}`}>{importanceCounts[key]}</p>
-                  <div className="flex items-center justify-center gap-1 mt-1">
-                    <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-                    <p className={`text-xs font-medium ${text}`}>{label}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Outcome */}
-          <div className="bg-white border border-border rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-secondary uppercase tracking-wide mb-3">By Outcome</p>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { key: "favourable" as const, label: "Favourable", bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" },
-                { key: "doubtful" as const, label: "Doubtful", bg: "bg-yellow-50", text: "text-yellow-700", dot: "bg-yellow-500" },
-                { key: "unfavourable" as const, label: "Unfavourable", bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
-              ].map(({ key, label, bg, text, dot }) => (
-                <div key={key} className={`${bg} rounded-lg p-3 text-center`}>
-                  <p className={`text-2xl font-bold ${text}`}>{outcomeCounts[key]}</p>
-                  <div className="flex items-center justify-center gap-1 mt-1">
-                    <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-                    <p className={`text-xs font-medium ${text}`}>{label}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom: Upcoming Deadlines + Recent Events */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* Upcoming Deadlines */}
-        <div className="bg-white border border-border rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-border">
-            <p className="text-sm font-semibold text-heading">Upcoming Deadlines</p>
-            <p className="text-xs text-secondary mt-0.5">Next 30 days</p>
-          </div>
-          {upcomingDeadlines.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted">No upcoming deadlines.</div>
-          ) : (
-            <div className="divide-y divide-surface-hover">
-              {upcomingDeadlines.map((proc: any) => {
-                const days = daysUntil(proc.to_be_completed_by);
-                const appeal = proc.appeal;
-                const clientName = appeal?.client_org?.name ?? "—";
-                const au = proc.assigned_user;
-                return (
-                  <div key={proc.id} className="px-5 py-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-heading truncate">{clientName}</p>
-                      <p className="text-xs text-secondary truncate">
-                        {[(appeal as any)?.financial_year?.name, (appeal as any)?.assessment_year?.name].filter(Boolean).join(" / ")}
-                        {(appeal as any)?.act_regulation?.name ? ` · ${(appeal as any).act_regulation.name}` : ""}
-                      </p>
-                      {au && (
-                        <p className="text-xs text-muted">{au.first_name} {au.last_name}</p>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0 text-right">
-                      <p className="text-xs font-medium text-heading">{fmtDate(proc.to_be_completed_by)}</p>
-                      <p className={`text-xs font-medium mt-0.5 ${days <= 7 ? "text-red-600" : days <= 14 ? "text-orange-500" : "text-secondary"}`}>
-                        {days === 0 ? "Today" : days < 0 ? `${Math.abs(days)}d overdue` : `${days}d left`}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Recent Events */}
-        <div className="bg-white border border-border rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-border">
-            <p className="text-sm font-semibold text-heading">Recent Activity</p>
-            <p className="text-xs text-secondary mt-0.5">Latest events added</p>
-          </div>
-          {(recentEvents ?? []).length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted">No events yet.</div>
-          ) : (
-            <div className="divide-y divide-surface-hover">
-              {(recentEvents ?? []).map((ev: any) => {
-                const appeal = ev.proceeding?.appeal;
-                const clientName = appeal?.client_org?.name ?? "—";
-                return (
-                  <div key={ev.id} className="px-5 py-3 flex items-start gap-3">
-                    <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-accent-light text-accent whitespace-nowrap flex-shrink-0 mt-0.5">
-                      {EVENT_LABELS[ev.category] ?? ev.category}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-heading font-medium truncate">{clientName}</p>
-                      <p className="text-xs text-muted">{fmtDate(ev.created_at)}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Quick actions (SP only) */}
-      {!isClient && (
-        <div className="flex items-center gap-3">
-          <Link href="/litigations/new"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            New Litigation
-          </Link>
-          <Link href="/litigations"
-            className="inline-flex items-center gap-2 px-4 py-2.5 border border-border bg-white hover:bg-page text-heading text-sm font-medium rounded-lg transition">
-            View All Litigations
-          </Link>
-        </div>
-      )}
     </div>
-  );
+  )
 }
