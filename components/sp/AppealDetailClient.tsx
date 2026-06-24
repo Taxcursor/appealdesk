@@ -133,6 +133,7 @@ interface Props {
   clientUsers: { id: string; first_name: string; last_name: string }[];
   mastersByType: Record<string, MasterItem[]>;
   canEdit: boolean;
+  clientPan?: string;
 }
 
 // ─── Event Category Field Config ─────────────────────────────────
@@ -863,7 +864,7 @@ function MultiSelect({ options, selected, onChange, placeholder }: {
 
 // ─── Proceeding Form Fields ────────────────────────────────────────
 function ProceedingFormFields({
-  values, onChange, onMultiChange, mastersByType, teamMembers, clientUsers, actRegulationId,
+  values, onChange, onMultiChange, mastersByType, teamMembers, clientUsers, actRegulationId, clientPan,
 }: {
   values: ProceedingInput;
   onChange: (field: keyof ProceedingInput, value: string) => void;
@@ -872,6 +873,7 @@ function ProceedingFormFields({
   teamMembers: { id: string; first_name: string; last_name: string }[];
   clientUsers: { id: string; first_name: string; last_name: string }[];
   actRegulationId?: string;
+  clientPan?: string;
 }) {
   const allProcs = mastersByType["proceeding_type"] ?? [];
   const availableProcs = actRegulationId
@@ -880,28 +882,35 @@ function ProceedingFormFields({
 
   const isFaceless = (values.authority_type ?? "").trim().toLowerCase() === "faceless";
   const disabledCls = "bg-surface-hover text-muted cursor-not-allowed border-border";
+  // Compact input style for the 3-column proceeding form
+  const pInp = "w-full px-2.5 py-1.5 text-xs border border-accent rounded-lg focus:outline-none focus:ring-1 focus:ring-primary";
+
+  const actRecord = (mastersByType["act_regulation"] ?? []).find(m => m.id === actRegulationId);
+  const isITAct = actRecord?.name.toLowerCase().includes("income") ?? false;
 
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-3 gap-3">
+      {/* Row 1: Proceeding | Authority Type | Authority Name */}
       <Field label="Proceeding">
-        <select value={values.proceeding_type_id ?? ""} onChange={(e) => onChange("proceeding_type_id", e.target.value)} className={inp}>
+        <select value={values.proceeding_type_id ?? ""} onChange={(e) => onChange("proceeding_type_id", e.target.value)} className={pInp}>
           <option value="">Select…</option>
           {[...availableProcs].sort((a, b) => a.name.localeCompare(b.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
       </Field>
       <Field label="Authority Type">
-        <input value={values.authority_type ?? ""} onChange={(e) => onChange("authority_type", e.target.value)} className={inp} />
+        <input value={values.authority_type ?? ""} onChange={(e) => onChange("authority_type", e.target.value)} className={pInp} />
       </Field>
       <Field label="Authority Name">
-        <input value={values.authority_name ?? ""} onChange={(e) => onChange("authority_name", e.target.value)} placeholder="e.g. ACIT, Circle 1(1)" className={inp} />
+        <input value={values.authority_name ?? ""} onChange={(e) => onChange("authority_name", e.target.value)} placeholder="e.g. ACIT, Circle 1(1)" className={pInp} />
       </Field>
+      {/* Row 2: Jurisdiction City (1 col) + Jurisdiction / Address (2 cols = fullWidth) */}
       <Field label="Jurisdiction City">
         <input
           value={isFaceless ? "" : (values.jurisdiction_city ?? "")}
           onChange={(e) => onChange("jurisdiction_city", e.target.value)}
           placeholder={isFaceless ? "N/A — Faceless" : "e.g. Chennai"}
           disabled={isFaceless}
-          className={`${inp} ${isFaceless ? disabledCls : ""}`}
+          className={`${pInp} ${isFaceless ? disabledCls : ""}`}
         />
       </Field>
       <Field label="Jurisdiction / Address" fullWidth>
@@ -910,11 +919,12 @@ function ProceedingFormFields({
           onChange={(e) => onChange("jurisdiction", e.target.value)}
           placeholder={isFaceless ? "N/A — Faceless" : "Full jurisdiction or address"}
           disabled={isFaceless}
-          className={`${inp} ${isFaceless ? disabledCls : ""}`}
+          className={`${pInp} ${isFaceless ? disabledCls : ""}`}
         />
       </Field>
+      {/* Row 3: Importance | Mode | Initiated On */}
       <Field label="Importance">
-        <select value={values.importance ?? ""} onChange={(e) => onChange("importance", e.target.value)} className={inp}>
+        <select value={values.importance ?? ""} onChange={(e) => onChange("importance", e.target.value)} className={pInp}>
           <option value="">Select…</option>
           <option value="critical">Critical</option>
           <option value="high">High</option>
@@ -923,17 +933,18 @@ function ProceedingFormFields({
         </select>
       </Field>
       <Field label="Mode">
-        <select value={values.mode ?? ""} onChange={(e) => onChange("mode", e.target.value)} className={inp}>
+        <select value={values.mode ?? ""} onChange={(e) => onChange("mode", e.target.value)} className={pInp}>
           <option value="">Select…</option>
           <option value="online">Online</option>
           <option value="offline">Offline / Physical</option>
         </select>
       </Field>
       <Field label="Initiated On">
-        <input type="date" value={values.initiated_on ?? ""} onChange={(e) => onChange("initiated_on", e.target.value)} className={inp} />
+        <input type="date" value={values.initiated_on ?? ""} onChange={(e) => onChange("initiated_on", e.target.value)} className={pInp} />
       </Field>
-      <Field label="Deadline">
-        <input type="date" value={values.to_be_completed_by ?? ""} onChange={(e) => onChange("to_be_completed_by", e.target.value)} className={inp} />
+      {/* Row 4: Limitation Date | Assigned To | Client Staff */}
+      <Field label="Limitation Date">
+        <input type="date" value={values.to_be_completed_by ?? ""} onChange={(e) => onChange("to_be_completed_by", e.target.value)} className={pInp} />
       </Field>
       <Field label="Assigned To">
         <MultiSelect
@@ -951,8 +962,9 @@ function ProceedingFormFields({
           placeholder="None"
         />
       </Field>
+      {/* Row 5: Possible Outcome | Status | PAN (IT acts only, read-only) */}
       <Field label="Possible Outcome">
-        <select value={values.possible_outcome ?? ""} onChange={(e) => onChange("possible_outcome", e.target.value)} className={inp}>
+        <select value={values.possible_outcome ?? ""} onChange={(e) => onChange("possible_outcome", e.target.value)} className={pInp}>
           <option value="">Select…</option>
           <option value="doubtful">Doubtful</option>
           <option value="favourable">Favourable</option>
@@ -960,12 +972,17 @@ function ProceedingFormFields({
         </select>
       </Field>
       <Field label="Status">
-        <select value={values.status ?? "open"} onChange={(e) => onChange("status", e.target.value)} className={inp}>
+        <select value={values.status ?? "open"} onChange={(e) => onChange("status", e.target.value)} className={pInp}>
           <option value="open">Open</option>
           <option value="in-progress">In Progress</option>
           <option value="closed">Closed</option>
         </select>
       </Field>
+      {isITAct && (
+        <Field label="PAN (Client Master)">
+          <input readOnly value={clientPan ?? "—"} className={`${pInp} bg-surface-hover text-muted cursor-default`} />
+        </Field>
+      )}
     </div>
   );
 }
@@ -1027,7 +1044,7 @@ function Modal({ title, onClose, isDirty, children }: {
 }
 
 // ─── Main Component ───────────────────────────────────────────────
-export default function AppealDetailClient({ appeal, clients, teamMembers, clientUsers, mastersByType, canEdit }: Props) {
+export default function AppealDetailClient({ appeal, clients, teamMembers, clientUsers, mastersByType, canEdit, clientPan }: Props) {
   const router = useRouter();
   const clientOrg = appeal.client_org ?? null;
 
@@ -1316,8 +1333,9 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     const baseDetails: Record<string, string> = {};
     if (cat === "response_to_notice" && addEventParentId) {
       const parent = allEventsById[addEventParentId];
-      if (parent?.category === "notice_from_authority" && parent.details?.due_date) {
-        baseDetails["due_date"] = parent.details.due_date;
+      const parentDueDate = parent?.details?.due_date as string | undefined;
+      if (parentDueDate) {
+        baseDetails["due_date"] = parentDueDate;
       }
     }
     setEventDetails(baseDetails);
@@ -1529,9 +1547,9 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     <DetailRow label="Initiated On" value={proc.initiated_on ? fmtDate(proc.initiated_on) : "—"} />
                   </div>
 
-                  {/* COL 3 — Deadline */}
+                  {/* COL 3 — Limitation Date */}
                   <div className="py-4">
-                    <DetailRow label="Deadline" value={proc.to_be_completed_by ? fmtDate(proc.to_be_completed_by) : "—"} />
+                    <DetailRow label="Limitation Date" value={proc.to_be_completed_by ? fmtDate(proc.to_be_completed_by) : "—"} />
                   </div>
 
                   {/* COL 4 — Importance */}
@@ -1849,7 +1867,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       {editProc && (
         <Modal title="Edit Proceeding" onClose={() => setEditProc(null)} isDirty={editProcIsDirty}>
           <form onSubmit={handleSaveProc} className="space-y-4">
-            <ProceedingFormFields values={editProcValues} onChange={proceedingFormChange(setEditProcValues)} onMultiChange={proceedingMultiChange(setEditProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
+            <ProceedingFormFields values={editProcValues} onChange={proceedingFormChange(setEditProcValues)} onMultiChange={proceedingMultiChange(setEditProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} clientPan={clientPan} />
             {editProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{editProcError}</div>}
             <div className="border-t border-border -mx-6 px-6 pt-4">
               <ProceedingAttachments proceedingId={editProc.id} docs={editProc.proceeding_documents ?? []} canEdit={canEdit} />
@@ -1868,7 +1886,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       {showAddProc && (
         <Modal title="Add Proceeding" onClose={() => { setShowAddProc(false); setAddProcPendingFiles([]); }} isDirty={addProcIsDirty}>
           <form onSubmit={handleAddProc} className="space-y-4">
-            <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} onMultiChange={proceedingMultiChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} />
+            <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} onMultiChange={proceedingMultiChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} clientPan={clientPan} />
             {/* Attachments */}
             <PendingAttachments files={addProcPendingFiles} onChange={setAddProcPendingFiles} />
             {addProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{addProcError}</div>}

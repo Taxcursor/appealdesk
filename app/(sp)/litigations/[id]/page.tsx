@@ -39,7 +39,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
 
   const clientOrgId = (appeal as any).client_org_id as string;
 
-  const [{ data: clients }, { data: teamMembers }, { data: clientUsers }, { data: masters }] = await Promise.all([
+  const [{ data: clients }, { data: teamMembers }, { data: clientUsers }, { data: masters }, { data: panRow }] = await Promise.all([
     supabase
       .from("organizations")
       .select("id, name")
@@ -66,6 +66,12 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
       .eq("is_active", true)
       .is("deleted_at", null)
       .order("sort_order"),
+    supabase
+      .from("compliance_details")
+      .select("number")
+      .eq("org_id", clientOrgId)
+      .eq("type", "pan")
+      .maybeSingle(),
   ]);
 
   const mastersByType = (masters ?? []).reduce((acc, rec) => {
@@ -75,6 +81,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
   }, {} as Record<string, { id: string; name: string; type: string; parent_id: string | null }[]>);
 
   const clientOrg = (appeal.client_org as any) ?? null;
+  const clientPan = panRow?.number ?? undefined;
 
   return (
     <div className="p-8">
@@ -91,6 +98,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
         clientUsers={clientUsers ?? []}
         mastersByType={mastersByType}
         canEdit={user?.role === "sp_admin" || user?.role === "sp_staff"}
+        clientPan={clientPan}
       />
     </div>
   );

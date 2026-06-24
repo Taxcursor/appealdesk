@@ -3,14 +3,21 @@
 -- Run this in Supabase SQL Editor after schema.sql
 -- ============================================================
 
--- Bucket for all organization files (logos + compliance docs)
+-- Bucket for all organization files (logos + compliance docs + event/proceeding attachments)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'org-files',
   'org-files',
   true,
-  5242880, -- 5MB max
-  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+  10485760, -- 10MB max
+  ARRAY[
+    'image/jpeg', 'image/jpg', 'image/png',
+    'application/pdf',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ]
 )
 ON CONFLICT (id) DO NOTHING;
 
