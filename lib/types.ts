@@ -42,6 +42,11 @@ export type EventCategory =
   | "notice_of_penalty"
   | "penalty_order"
   | "filing_of_appeal"
+  | "cit_a_order"
+  | "itat_order"
+  | "high_court_order"
+  | "supreme_court_order"
+  | "stay_petition"
   | "others";
 
 export type NoticeStatus = "open" | "in_progress" | "closed";

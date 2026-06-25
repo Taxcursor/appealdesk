@@ -282,7 +282,7 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
               {[...availableProceedings].sort((a, b) => a.name.localeCompare(b.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </Field>
-          <Field label="Authority Type">
+          <Field label="Jurisdiction">
             <input value={authorityType} onChange={(e) => setAuthorityType(e.target.value)} className={inp} />
           </Field>
           <Field label="Authority Name">
@@ -315,7 +315,7 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
           <Field label="Initiated On">
             <input type="date" value={initiatedOn} onChange={(e) => setInitiatedOn(e.target.value)} className={inp} />
           </Field>
-          <Field label="To Be Completed By">
+          <Field label="Limitation Date">
             <input type="date" value={toBeCompletedBy} onChange={(e) => setToBeCompletedBy(e.target.value)} className={inp} />
           </Field>
           <Field label="Assigned To">

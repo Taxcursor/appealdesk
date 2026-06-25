@@ -890,14 +890,14 @@ function ProceedingFormFields({
 
   return (
     <div className="grid grid-cols-3 gap-3">
-      {/* Row 1: Proceeding | Authority Type | Authority Name */}
+      {/* Row 1: Proceeding | Jurisdiction | Authority Name */}
       <Field label="Proceeding">
         <select value={values.proceeding_type_id ?? ""} onChange={(e) => onChange("proceeding_type_id", e.target.value)} className={pInp}>
           <option value="">Select…</option>
           {[...availableProcs].sort((a, b) => a.name.localeCompare(b.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
       </Field>
-      <Field label="Authority Type">
+      <Field label="Jurisdiction">
         <input value={values.authority_type ?? ""} onChange={(e) => onChange("authority_type", e.target.value)} className={pInp} />
       </Field>
       <Field label="Authority Name">
