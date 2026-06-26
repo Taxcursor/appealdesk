@@ -14,6 +14,14 @@ export interface AppealInput {
   status?: string;
 }
 
+export interface ProceedingContact {
+  id: string;
+  designation: string;
+  name: string;
+  mobile: string;
+  email: string;
+}
+
 export interface ProceedingInput {
   proceeding_type_id?: string;
   authority_type?: string;
@@ -29,6 +37,7 @@ export interface ProceedingInput {
   possible_outcome?: string;
   status?: string;
   gst_number?: string;
+  contacts?: ProceedingContact[];
 }
 
 export interface EventInput {
@@ -65,6 +74,7 @@ function cleanProceeding(proc: ProceedingInput) {
     possible_outcome: (proc.possible_outcome as "favourable" | "doubtful" | "unfavourable") || null,
     status: proc.status || "open",
     gst_number: proc.gst_number || null,
+    contacts: proc.contacts ?? [],
   };
 }
 
@@ -79,6 +89,7 @@ const EVENT_CATEGORY_LABELS: Record<string, string> = {
   others: "Others",
   response_to_notice: "Response to Notice",
   adjournment_request: "Adjournment Request",
+  hearing_proceedings: "Hearing Proceedings",
   personal_follow_up: "Personal Follow-up",
   others_sub: "Others",
 };

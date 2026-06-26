@@ -40,7 +40,7 @@ import {
   deleteEvent, deleteAppeal, deleteProceeding,
   uploadProceedingDocument, deleteProceedingDocument,
   uploadEventDocument, deleteEventDocument,
-  ProceedingInput, EventInput,
+  ProceedingInput, EventInput, ProceedingContact,
 } from "@/app/(sp)/litigations/actions";
 import { PendingAttachments } from "@/components/sp/PendingAttachments";
 
@@ -111,6 +111,7 @@ interface Proceeding {
   created_at: string;
   deleted_at?: string | null;
   gst_number?: string | null;
+  contacts?: ProceedingContact[] | null;
   events: AppEvent[];
   proceeding_documents?: AttachedFile[];
 }
@@ -139,7 +140,7 @@ interface Props {
 }
 
 // ─── Event Category Field Config ─────────────────────────────────
-type FieldType = "datetime" | "text" | "select" | "proceeding_select" | "file";
+type FieldType = "datetime" | "date" | "text" | "textarea" | "select" | "proceeding_select" | "file";
 
 interface FieldDef {
   key: string;
@@ -151,19 +152,17 @@ interface FieldDef {
 
 const MAIN_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
   notice_from_authority: [
-    { key: "date_of_notice", label: "Notice Date", type: "datetime" },
+    { key: "date_of_notice", label: "Notice Date", type: "date" },
     { key: "due_date", label: "Due Date", type: "datetime" },
     { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
   show_cause_notice: [
-    { key: "date_of_notice", label: "SCN Date", type: "datetime" },
+    { key: "date_of_notice", label: "SCN Date", type: "date" },
     { key: "due_date", label: "Due Date", type: "datetime" },
     { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
   personal_hearing_notice: [
     { key: "hearing_date", label: "Hearing Date", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
   virtual_hearing_notice: [
     { key: "hearing_date", label: "Hearing Date", type: "datetime" },
@@ -171,9 +170,7 @@ const MAIN_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
     { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
   assessment_order: [
-    { key: "date_of_order", label: "Date of Order", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "date_of_order", label: "Date of Order", type: "date" },
   ],
   penalty_order: [
     { key: "date_of_order", label: "Date of Order", type: "datetime" },
@@ -186,45 +183,38 @@ const MAIN_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
     { key: "due_date", label: "Due Date for Filing Appeal", type: "datetime" },
     { key: "target_date_filing", label: "Target Date for Filing Appeal", type: "datetime" },
     { key: "appeal_filed_on", label: "Appeal Filed On", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
   cit_a_order: [
-    { key: "date_of_order", label: "Date of Order", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "date_of_order", label: "Date of Order", type: "date" },
   ],
   itat_order: [
-    { key: "date_of_order", label: "Date of Order", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "date_of_order", label: "Date of Order", type: "date" },
   ],
   high_court_order: [
-    { key: "date_of_order", label: "Date of Order", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "date_of_order", label: "Date of Order", type: "date" },
   ],
   supreme_court_order: [
-    { key: "date_of_order", label: "Date of Order", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
-  ],
-  stay_petition: [
-    { key: "date", label: "Date", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "date_of_order", label: "Date of Order", type: "date" },
   ],
   others: [
-    { key: "date", label: "Date", type: "datetime" },
+    { key: "date", label: "Date", type: "date" },
+    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+  ],
+  additional_data_request: [
+    { key: "mode_of_request", label: "Mode of Request", type: "select", options: [
+      { value: "email", label: "Email" },
+      { value: "phone", label: "Phone" },
+      { value: "visit", label: "Visit" },
+    ]},
     { key: "due_date", label: "Due Date", type: "datetime" },
     { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "notes", label: "Notes", type: "textarea", fullWidth: true },
   ],
 };
 
 const SUB_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
   response_to_notice: [
     { key: "response_submitted_on", label: "Response Submitted On", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
   adjournment_request: [
     { key: "adjourned_to", label: "Adjourned To", type: "datetime" },
@@ -233,11 +223,15 @@ const SUB_CATEGORY_FIELDS: Record<string, FieldDef[]> = {
   personal_follow_up: [
     { key: "follow_up_with", label: "Follow Up With", type: "text" },
     { key: "follow_up_by", label: "Follow Up By", type: "text" },
-    { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
+    { key: "internal_target_date", label: "Date", type: "datetime" },
+  ],
+  hearing_proceedings: [
+    { key: "hearing_attended_by", label: "Hearing Attended By", type: "text" },
+    { key: "attended_date", label: "Attended Date", type: "datetime" },
+    { key: "notes", label: "Notes", type: "textarea", fullWidth: true },
   ],
   others_sub: [
-    { key: "date", label: "Date", type: "datetime" },
-    { key: "due_date", label: "Due Date", type: "datetime" },
+    { key: "date", label: "Date", type: "date" },
     { key: "internal_target_date", label: "Internal Target Date", type: "datetime" },
   ],
 };
@@ -256,30 +250,22 @@ const PRIMARY_DATE: Record<string, string> = {
   itat_order: "date_of_order",
   high_court_order: "date_of_order",
   supreme_court_order: "date_of_order",
-  stay_petition: "date",
   others: "date",
+  additional_data_request: "due_date",
   response_to_notice: "response_submitted_on",
   adjournment_request: "adjourned_to",
+  hearing_proceedings: "attended_date",
   others_sub: "date",
 };
 
 const DUE_DATE_KEY: Record<string, string> = {
   notice_from_authority: "due_date",
   show_cause_notice: "due_date",
-  personal_hearing_notice: "due_date",
   virtual_hearing_notice: "due_date",
-  assessment_order: "due_date",
   penalty_order: "due_date",
   filing_of_appeal: "due_date",
-  cit_a_order: "due_date",
-  itat_order: "due_date",
-  high_court_order: "due_date",
-  supreme_court_order: "due_date",
-  stay_petition: "due_date",
-  others: "due_date",
-  response_to_notice: "due_date",
+  additional_data_request: "due_date",
   adjournment_request: "adjourned_to",
-  others_sub: "due_date",
 };
 
 // Maps each main event category → the date field to surface in sub-event parent info panels.
@@ -295,8 +281,8 @@ const PARENT_DATE_FIELD: Record<string, { key: string; label: string }> = {
   itat_order:              { key: "date_of_order",  label: "Date of Order" },
   high_court_order:        { key: "date_of_order",  label: "Date of Order" },
   supreme_court_order:     { key: "date_of_order",  label: "Date of Order" },
-  stay_petition:           { key: "date",            label: "Date" },
   others:                  { key: "date",            label: "Date" },
+  additional_data_request: { key: "due_date",        label: "Due Date" },
 };
 
 const MAIN_EVENT_LABELS: Record<string, string> = {
@@ -311,13 +297,14 @@ const MAIN_EVENT_LABELS: Record<string, string> = {
   itat_order: "ITAT Order",
   high_court_order: "High Court Order",
   supreme_court_order: "Supreme Court Order",
-  stay_petition: "Stay Petition",
+  additional_data_request: "Additional Data Request",
   others: "Others",
 };
 
 const SUB_EVENT_LABELS: Record<string, string> = {
   response_to_notice: "Response to Notice",
   adjournment_request: "Adjournment Request",
+  hearing_proceedings: "Hearing Proceedings",
   personal_follow_up: "Personal Follow-up",
   others_sub: "Others",
 };
@@ -1060,6 +1047,137 @@ function Modal({ title, onClose, isDirty, children }: {
   );
 }
 
+// ─── Proceeding Contacts Tab ──────────────────────────────────────
+function ProceedingContactsTab({ contacts, onChange, canEdit }: {
+  contacts: ProceedingContact[];
+  onChange: (contacts: ProceedingContact[]) => void;
+  canEdit: boolean;
+}) {
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [draft, setDraft] = useState<ProceedingContact>({ id: "", designation: "", name: "", mobile: "", email: "" });
+  const [addMode, setAddMode] = useState(false);
+  const [newDraft, setNewDraft] = useState<ProceedingContact>({ id: "", designation: "", name: "", mobile: "", email: "" });
+
+  const colGrid = canEdit ? "1fr 1.2fr 130px 1.5fr 68px" : "1fr 1.2fr 130px 1.5fr";
+
+  function startEdit(idx: number) {
+    setAddMode(false);
+    setEditIdx(idx);
+    setDraft({ ...contacts[idx] });
+  }
+  function cancelEdit() { setEditIdx(null); }
+  function saveEdit() {
+    if (editIdx === null) return;
+    onChange(contacts.map((c, i) => i === editIdx ? draft : c));
+    setEditIdx(null);
+  }
+  function deleteContact(idx: number) {
+    onChange(contacts.filter((_, i) => i !== idx));
+    if (editIdx === idx) setEditIdx(null);
+  }
+  function startAdd() {
+    setEditIdx(null);
+    setNewDraft({ id: crypto.randomUUID(), designation: "", name: "", mobile: "", email: "" });
+    setAddMode(true);
+  }
+  function saveNew() {
+    if (!newDraft.name && !newDraft.designation) return;
+    onChange([...contacts, newDraft]);
+    setAddMode(false);
+  }
+  function cancelAdd() { setAddMode(false); }
+
+  const inp = "w-full px-2 py-1.5 text-xs border border-accent rounded focus:outline-none focus:ring-1 focus:ring-primary";
+  const checkBtn = "p-1.5 rounded hover:bg-surface-hover text-success transition-colors inline-flex";
+  const xBtn = "p-1.5 rounded hover:bg-surface-hover text-muted hover:text-heading transition-colors inline-flex";
+
+  return (
+    <div className="space-y-3">
+      <div className="border border-border rounded-lg overflow-hidden">
+        {/* Header */}
+        <div className="grid bg-table-header border-b border-table-header-border" style={{ gridTemplateColumns: colGrid }}>
+          <div className="px-3 py-2 text-xs font-semibold text-heading">Designation</div>
+          <div className="px-3 py-2 text-xs font-semibold text-heading">Name</div>
+          <div className="px-3 py-2 text-xs font-semibold text-heading">Mobile #</div>
+          <div className="px-3 py-2 text-xs font-semibold text-heading">Email ID</div>
+          {canEdit && <div className="px-3 py-2" />}
+        </div>
+
+        {/* Rows */}
+        <div className="divide-y divide-border">
+          {contacts.length === 0 && !addMode && (
+            <div className="px-3 py-5 text-xs text-muted text-center">No contacts added yet.</div>
+          )}
+
+          {contacts.map((contact, idx) => (
+            <div key={contact.id} className="grid items-center" style={{ gridTemplateColumns: colGrid }}>
+              {editIdx === idx ? (
+                <>
+                  <div className="px-2 py-1.5"><input className={inp} value={draft.designation} onChange={e => setDraft(d => ({ ...d, designation: e.target.value }))} placeholder="Designation" autoFocus /></div>
+                  <div className="px-2 py-1.5"><input className={inp} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Name" /></div>
+                  <div className="px-2 py-1.5"><input className={inp} value={draft.mobile} onChange={e => setDraft(d => ({ ...d, mobile: e.target.value }))} placeholder="Mobile #" /></div>
+                  <div className="px-2 py-1.5"><input className={inp} value={draft.email} onChange={e => setDraft(d => ({ ...d, email: e.target.value }))} placeholder="Email" type="email" /></div>
+                  <div className="px-2 py-1.5 flex items-center gap-0.5">
+                    <button type="button" onClick={saveEdit} className={checkBtn} title="Save">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    </button>
+                    <button type="button" onClick={cancelEdit} className={xBtn} title="Cancel">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="px-3 py-2.5 text-xs text-heading truncate">{contact.designation || "—"}</div>
+                  <div className="px-3 py-2.5 text-xs text-secondary truncate">{contact.name || "—"}</div>
+                  <div className="px-3 py-2.5 text-xs text-secondary">{contact.mobile || "—"}</div>
+                  <div className="px-3 py-2.5 text-xs text-secondary truncate">{contact.email || "—"}</div>
+                  {canEdit && (
+                    <div className="px-2 py-1.5 flex items-center gap-0.5">
+                      <button type="button" onClick={() => startEdit(idx)} className="p-1.5 rounded hover:bg-surface-hover text-secondary hover:text-heading transition-colors inline-flex" title="Edit">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      </button>
+                      <button type="button" onClick={() => deleteContact(idx)} className="p-1.5 rounded hover:bg-surface-hover text-red-400 hover:text-red-600 transition-colors inline-flex" title="Delete">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+
+          {/* Add new row inline */}
+          {addMode && (
+            <div className="grid items-center bg-accent-faint" style={{ gridTemplateColumns: colGrid }}>
+              <div className="px-2 py-1.5"><input className={inp} value={newDraft.designation} onChange={e => setNewDraft(d => ({ ...d, designation: e.target.value }))} placeholder="Designation" autoFocus /></div>
+              <div className="px-2 py-1.5"><input className={inp} value={newDraft.name} onChange={e => setNewDraft(d => ({ ...d, name: e.target.value }))} placeholder="Name" /></div>
+              <div className="px-2 py-1.5"><input className={inp} value={newDraft.mobile} onChange={e => setNewDraft(d => ({ ...d, mobile: e.target.value }))} placeholder="Mobile #" /></div>
+              <div className="px-2 py-1.5"><input className={inp} value={newDraft.email} onChange={e => setNewDraft(d => ({ ...d, email: e.target.value }))} placeholder="Email" type="email" /></div>
+              <div className="px-2 py-1.5 flex items-center gap-0.5">
+                <button type="button" onClick={saveNew} className={checkBtn} title="Add">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                </button>
+                <button type="button" onClick={cancelAdd} className={xBtn} title="Cancel">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {canEdit && !addMode && (
+        <button type="button" onClick={startAdd}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded-lg text-secondary hover:text-heading hover:bg-surface-hover transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+          Add Contact
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────
 export default function AppealDetailClient({ appeal, clients, teamMembers, clientUsers, mastersByType, canEdit, clientPan, clientGstNumbers }: Props) {
   const router = useRouter();
@@ -1129,6 +1247,9 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [editProcValues, setEditProcValues] = useState<ProceedingInput>({});
   const [editProcSaving, setEditProcSaving] = useState(false);
   const [editProcError, setEditProcError] = useState<string | null>(null);
+  const [editProcTab, setEditProcTab] = useState<"details" | "contacts">("details");
+  const [editProcContacts, setEditProcContacts] = useState<ProceedingContact[]>([]);
+  const editProcContactsInitRef = useRef<ProceedingContact[]>([]);
 
   function openEditProc(proc: Proceeding) {
     const initValues: ProceedingInput = {
@@ -1148,8 +1269,12 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       gst_number: proc.gst_number ?? "",
     };
     editProcInitRef.current = initValues;
+    const initContacts = proc.contacts ?? [];
+    editProcContactsInitRef.current = initContacts;
     setEditProc(proc);
     setEditProcValues(initValues);
+    setEditProcContacts(initContacts);
+    setEditProcTab("details");
     setEditProcError(null);
   }
 
@@ -1158,7 +1283,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     if (!editProc) return;
     setEditProcSaving(true); setEditProcError(null);
     try {
-      await updateProceeding(editProc.id, editProcValues);
+      await updateProceeding(editProc.id, { ...editProcValues, contacts: editProcContacts });
       setEditProc(null); router.refresh();
     } catch (err) {
       setEditProcError(err instanceof Error ? err.message : "Failed to save.");
@@ -1170,6 +1295,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
   const [addProcValues, setAddProcValues] = useState<ProceedingInput>({});
   const [addProcSaving, setAddProcSaving] = useState(false);
   const [addProcError, setAddProcError] = useState<string | null>(null);
+  const [addProcTab, setAddProcTab] = useState<"details" | "contacts">("details");
+  const [addProcContacts, setAddProcContacts] = useState<ProceedingContact[]>([]);
 
   const [addProcPendingFiles, setAddProcPendingFiles] = useState<{ file: File; desc: string }[]>([]);
 
@@ -1177,7 +1304,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     e.preventDefault();
     setAddProcSaving(true); setAddProcError(null);
     try {
-      const procId = await addProceeding(appeal.id, addProcValues);
+      const procId = await addProceeding(appeal.id, { ...addProcValues, contacts: addProcContacts });
       if (addProcPendingFiles.length > 0) {
         const supabase = createClient();
         for (const { file, desc } of addProcPendingFiles) {
@@ -1188,7 +1315,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
           await uploadProceedingDocument(procId, file.name, urlData.publicUrl, file.size, desc.trim() || undefined);
         }
       }
-      setShowAddProc(false); setAddProcValues({}); setAddProcPendingFiles([]); router.refresh();
+      setShowAddProc(false); setAddProcValues({}); setAddProcPendingFiles([]); setAddProcContacts([]); setAddProcTab("details"); router.refresh();
     } catch (err) {
       setAddProcError(err instanceof Error ? err.message : "Failed to add proceeding.");
     } finally { setAddProcSaving(false); }
@@ -1422,10 +1549,13 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
     editAct !== (appeal.act_regulation?.id ?? "") ||
     editAppealStatus !== (appeal.status ?? "open")
   );
-  const editProcIsDirty = !!editProc &&
-    JSON.stringify(editProcValues) !== JSON.stringify(editProcInitRef.current);
+  const editProcIsDirty = !!editProc && (
+    JSON.stringify(editProcValues) !== JSON.stringify(editProcInitRef.current) ||
+    JSON.stringify(editProcContacts) !== JSON.stringify(editProcContactsInitRef.current)
+  );
   const addProcIsDirty = showAddProc && (
     addProcPendingFiles.length > 0 ||
+    addProcContacts.length > 0 ||
     Object.values(addProcValues).some(v => Array.isArray(v) ? v.length > 0 : !!v)
   );
   const editEventIsDirty = !!editEvent && (
@@ -1541,7 +1671,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                 {/* ── Collapsed summary row (always visible) ── */}
                 <div
                   className="grid items-center bg-[#696969] hover:bg-[#595959] transition-colors cursor-pointer select-none overflow-hidden"
-                  style={{ gridTemplateColumns: "1fr 136px 124px 72px 72px 56px auto" }}
+                  style={{ gridTemplateColumns: "1fr 136px 124px 110px 108px 72px 72px 56px auto" }}
                   onClick={() => toggleProc(proc.id)}
                 >
                   {/* COL 1 — chevron + number + name */}
@@ -1570,19 +1700,39 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     <DetailRow label="Limitation Date" value={proc.to_be_completed_by ? fmtDate(proc.to_be_completed_by) : "—"} />
                   </div>
 
-                  {/* COL 4 — Importance */}
+                  {/* COL 4 — Jurisdiction */}
+                  <div className="py-4 min-w-0">
+                    <DetailRow
+                      label="Jurisdiction"
+                      value={proc.authority_type || null}
+                    />
+                  </div>
+
+                  {/* COL 5 — Possible Outcome */}
+                  <div className="py-4">
+                    <p className="text-xs mb-0.5 text-white/70" style={{ textShadow: "0 0 8px rgba(0,0,0,0.7)" }}>Outcome</p>
+                    {outCfg ? (
+                      <span className={`inline-flex px-1.5 py-0.5 rounded-full text-xs font-medium ${outCfg.cls}`}>
+                        {outCfg.label}
+                      </span>
+                    ) : (
+                      <p className="text-sm text-white" style={{ textShadow: "0 0 8px rgba(0,0,0,0.7)" }}>—</p>
+                    )}
+                  </div>
+
+                  {/* COL 6 — Importance */}
                   <div className="py-4">
                     <span className={`text-xs font-semibold ${impCfg ? impCfg.cls.split(" ").filter(c => c.startsWith("text-")).join(" ") : "text-white/70"}`}>
                       {impCfg ? impCfg.label : "—"}
                     </span>
                   </div>
 
-                  {/* COL 5 — Mode */}
+                  {/* COL 7 — Mode */}
                   <div className="py-4">
                     <span className="text-xs text-white/70 capitalize">{proc.mode ?? "—"}</span>
                   </div>
 
-                  {/* COL 6 — Status (color inherits from importance level) */}
+                  {/* COL 8 — Status (color inherits from importance level) */}
                   <div className="py-4">
                     <span className={`text-xs font-medium ${impCfg ? impCfg.cls.split(" ").filter(c => c.startsWith("text-")).join(" ") : procStatusCfg ? procStatusCfg.cls.split(" ").filter(c => c.startsWith("text-")).join(" ") : "text-white/70"}`}>
                       {procStatusCfg ? procStatusCfg.label : "—"}
@@ -1610,8 +1760,9 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     {/* CE-PROC-DETAILS: expanded details panel bg="bg-accent-tint"(#F0F0F0) divider="border-table-header"(#D2D2D2) */}
                     {/* Proceeding details */}
                     <div className="px-5 py-4 grid grid-cols-3 gap-x-6 gap-y-4 border-b border-table-header bg-white">
-                      <DetailRow light label="Authority" value={[proc.authority_type, proc.authority_name].filter(Boolean).join(" · ")} />
-                      <DetailRow light label="Jurisdiction" value={[proc.jurisdiction_city, proc.jurisdiction].filter(Boolean).join(", ")} />
+                      <DetailRow light label="Jurisdiction" value={proc.authority_type || null} />
+                      <DetailRow light label="Authority Name" value={proc.authority_name || null} />
+                      <DetailRow light label="Jurisdiction City" value={proc.jurisdiction_city || null} />
                       <DetailRow light label="Assigned To" value={assignedNames.length > 0 ? assignedNames.join(", ") : null} />
                       <DetailRow light label="Client Staff" value={clientStaffNames.length > 0 ? clientStaffNames.join(", ") : null} />
                       <DetailRow light label="Possible Outcome" value={outCfg ? (
@@ -1663,17 +1814,18 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                         );
                       }
 
-                      const EVENT_GRID = "1fr 156px 130px 88px 36px auto";
+                      const EVENT_GRID = "1fr 156px 148px 130px 88px 36px auto";
                       const LEFT_INNER = "14px auto 1fr";
 
                       function EventRow({ ev, isSub, subIdx }: { ev: AppEvent; isSub?: boolean; subIdx?: number }) {
                         const effectiveCat = ev.event_type === "sub" && ev.category === "others" ? "others_sub" : ev.category;
                         const primaryKey = PRIMARY_DATE[effectiveCat];
                         const noticeDate = primaryKey && ev.details?.[primaryKey]
-                          ? fmtDateTime(ev.details[primaryKey])
-                          : ev.event_date ? fmtDateTime(ev.event_date) : "—";
+                          ? fmtDate(ev.details[primaryKey])
+                          : ev.event_date ? fmtDate(ev.event_date) : "—";
                         const dueDateKey = DUE_DATE_KEY[effectiveCat];
-                        const dueDate = dueDateKey && ev.details?.[dueDateKey] ? fmtDateTime(ev.details[dueDateKey]) : "—";
+                        const dueDate = dueDateKey && ev.details?.[dueDateKey] ? fmtDate(ev.details[dueDateKey]) : "—";
+                        const internalTargetDate = ev.details?.internal_target_date ? fmtDate(ev.details.internal_target_date) : "—";
                         const statusCfg = EVENT_STATUS_CFG[ev.status ?? "open"] ?? EVENT_STATUS_CFG.open;
                         const statusTextCls = statusCfg.cls.split(" ").filter(c => c.startsWith("text-")).join(" ");
                         const cnt = (ev.event_documents ?? []).filter(d => !d.deleted_at).length;
@@ -1690,6 +1842,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                               <span className="text-xs text-heading font-medium min-w-0 truncate">{getEventLabel(ev.category, ev.details)}</span>
                             </div>
                             <div className="py-1.5"><span className="text-xs text-muted">Notice: </span><span className="text-xs text-secondary">{noticeDate}</span></div>
+                            <div className="py-1.5"><span className="text-xs text-muted">Target: </span><span className="text-xs text-secondary">{internalTargetDate}</span></div>
                             <div className="py-1.5"><span className="text-xs text-muted">Due: </span><span className="text-xs text-secondary">{dueDate}</span></div>
                             <div className="py-1.5"><span className={`text-xs font-medium ${statusTextCls}`}>{statusCfg.label}</span></div>
                             <div className="py-1.5 flex items-center">
@@ -1732,9 +1885,10 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                     {(() => {
                                       const effectiveCat = master.category;
                                       const primaryKey = PRIMARY_DATE[effectiveCat];
-                                      const noticeDate = primaryKey && master.details?.[primaryKey] ? fmtDateTime(master.details[primaryKey]) : master.event_date ? fmtDateTime(master.event_date) : "—";
+                                      const noticeDate = primaryKey && master.details?.[primaryKey] ? fmtDate(master.details[primaryKey]) : master.event_date ? fmtDate(master.event_date) : "—";
                                       const dueDateKey = DUE_DATE_KEY[effectiveCat];
-                                      const dueDate = dueDateKey && master.details?.[dueDateKey] ? fmtDateTime(master.details[dueDateKey]) : "—";
+                                      const dueDate = dueDateKey && master.details?.[dueDateKey] ? fmtDate(master.details[dueDateKey]) : "—";
+                                      const internalTargetDate = master.details?.internal_target_date ? fmtDate(master.details.internal_target_date) : "—";
                                       const statusCfg = EVENT_STATUS_CFG[master.status ?? "open"] ?? EVENT_STATUS_CFG.open;
                                       const statusTextCls = statusCfg.cls.split(" ").filter(c => c.startsWith("text-")).join(" ");
                                       const cnt = (master.event_documents ?? []).filter(d => !d.deleted_at).length;
@@ -1754,6 +1908,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                                             <span className="text-xs text-heading font-bold min-w-0 truncate">{getEventLabel(master.category, master.details)}</span>
                                           </div>
                                           <div className="py-2.5"><span className="text-xs text-muted font-semibold">Notice: </span><span className="text-xs text-secondary font-semibold">{noticeDate}</span></div>
+                                          <div className="py-2.5"><span className="text-xs text-muted font-semibold">Target: </span><span className="text-xs text-secondary font-semibold">{internalTargetDate}</span></div>
                                           <div className="py-2.5"><span className="text-xs text-muted font-semibold">Due: </span><span className="text-xs text-secondary font-semibold">{dueDate}</span></div>
                                           <div className="py-2.5"><span className={`text-xs font-bold ${statusTextCls}`}>{statusCfg.label}</span></div>
                                           <div className="py-2.5 flex items-center">
@@ -1888,11 +2043,32 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
       {editProc && (
         <Modal title="Edit Proceeding" onClose={() => setEditProc(null)} isDirty={editProcIsDirty}>
           <form onSubmit={handleSaveProc} className="space-y-4">
-            <ProceedingFormFields values={editProcValues} onChange={proceedingFormChange(setEditProcValues)} onMultiChange={proceedingMultiChange(setEditProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} clientPan={clientPan} clientGstNumbers={clientGstNumbers} />
-            {editProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{editProcError}</div>}
-            <div className="border-t border-border -mx-6 px-6 pt-4">
-              <ProceedingAttachments proceedingId={editProc.id} docs={editProc.proceeding_documents ?? []} canEdit={canEdit} />
+            {/* Tab strip */}
+            <div className="flex border-b border-border -mx-6 px-6">
+              {(["details", "contacts"] as const).map(tab => (
+                <button key={tab} type="button" onClick={() => setEditProcTab(tab)}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${editProcTab === tab ? "border-primary text-primary" : "border-transparent text-muted hover:text-heading"}`}>
+                  {tab === "details" ? "Proceeding Details" : (
+                    <span className="inline-flex items-center gap-1.5">
+                      Contacts
+                      {editProcContacts.length > 0 && <span className="inline-flex items-center justify-center w-4 h-4 text-xs bg-accent-light text-accent rounded-full font-semibold">{editProcContacts.length}</span>}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
+            {/* Details tab */}
+            <div className={editProcTab === "details" ? "block space-y-4" : "hidden"}>
+              <ProceedingFormFields values={editProcValues} onChange={proceedingFormChange(setEditProcValues)} onMultiChange={proceedingMultiChange(setEditProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} clientPan={clientPan} clientGstNumbers={clientGstNumbers} />
+              <div className="border-t border-border -mx-6 px-6 pt-4">
+                <ProceedingAttachments proceedingId={editProc.id} docs={editProc.proceeding_documents ?? []} canEdit={canEdit} />
+              </div>
+            </div>
+            {/* Contacts tab */}
+            <div className={editProcTab === "contacts" ? "block" : "hidden"}>
+              <ProceedingContactsTab contacts={editProcContacts} onChange={setEditProcContacts} canEdit={canEdit} />
+            </div>
+            {editProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{editProcError}</div>}
             <div className="flex gap-3 justify-end pt-2">
               <button type="button" onClick={() => setEditProc(null)} className="px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button type="submit" disabled={editProcSaving} className="px-4 py-2 text-sm bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition disabled:opacity-60">
@@ -1905,14 +2081,34 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
 
       {/* ── Add Proceeding Modal ── */}
       {showAddProc && (
-        <Modal title="Add Proceeding" onClose={() => { setShowAddProc(false); setAddProcPendingFiles([]); }} isDirty={addProcIsDirty}>
+        <Modal title="Add Proceeding" onClose={() => { setShowAddProc(false); setAddProcPendingFiles([]); setAddProcContacts([]); setAddProcTab("details"); }} isDirty={addProcIsDirty}>
           <form onSubmit={handleAddProc} className="space-y-4">
-            <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} onMultiChange={proceedingMultiChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} clientPan={clientPan} clientGstNumbers={clientGstNumbers} />
-            {/* Attachments */}
-            <PendingAttachments files={addProcPendingFiles} onChange={setAddProcPendingFiles} />
+            {/* Tab strip */}
+            <div className="flex border-b border-border -mx-6 px-6">
+              {(["details", "contacts"] as const).map(tab => (
+                <button key={tab} type="button" onClick={() => setAddProcTab(tab)}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${addProcTab === tab ? "border-primary text-primary" : "border-transparent text-muted hover:text-heading"}`}>
+                  {tab === "details" ? "Proceeding Details" : (
+                    <span className="inline-flex items-center gap-1.5">
+                      Contacts
+                      {addProcContacts.length > 0 && <span className="inline-flex items-center justify-center w-4 h-4 text-xs bg-accent-light text-accent rounded-full font-semibold">{addProcContacts.length}</span>}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {/* Details tab */}
+            <div className={addProcTab === "details" ? "block space-y-4" : "hidden"}>
+              <ProceedingFormFields values={addProcValues} onChange={proceedingFormChange(setAddProcValues)} onMultiChange={proceedingMultiChange(setAddProcValues)} mastersByType={mastersByType} teamMembers={teamMembers} clientUsers={clientUsers} actRegulationId={appeal.act_regulation?.id ?? undefined} clientPan={clientPan} clientGstNumbers={clientGstNumbers} />
+              <PendingAttachments files={addProcPendingFiles} onChange={setAddProcPendingFiles} />
+            </div>
+            {/* Contacts tab */}
+            <div className={addProcTab === "contacts" ? "block" : "hidden"}>
+              <ProceedingContactsTab contacts={addProcContacts} onChange={setAddProcContacts} canEdit={canEdit} />
+            </div>
             {addProcError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{addProcError}</div>}
             <div className="flex gap-3 justify-end pt-2">
-              <button type="button" onClick={() => { setShowAddProc(false); setAddProcPendingFiles([]); }} className="px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
+              <button type="button" onClick={() => { setShowAddProc(false); setAddProcPendingFiles([]); setAddProcContacts([]); setAddProcTab("details"); }} className="px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button type="submit" disabled={addProcSaving} className="px-4 py-2 text-sm bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition disabled:opacity-60">
                 {addProcSaving ? "Adding…" : "Add Proceeding"}
               </button>
@@ -1969,6 +2165,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                   if (rawVal) {
                     if (field.type === "datetime") {
                       display = fmtDateTime(rawVal);
+                    } else if (field.type === "date") {
+                      display = fmtDate(rawVal);
                     } else if (field.type === "select") {
                       const opt = field.options?.find((o) => o.value === rawVal);
                       display = opt?.label ?? rawVal;
@@ -2041,8 +2239,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               </Field>
             )}
 
-            {/* Order Number / Notice Number — main events only */}
-            {editEventType === "main" && (
+            {/* Order Number / Notice Number — main events only, not shown for Others */}
+            {editEventType === "main" && editEventCategory !== "others" && (
               <Field label={editEventCategory === "notice_from_authority" ? "Notice Number / Document Identification Number (DIN)" : "Order Number"}>
                 <input type="text" value={editEventNoticeNumber} onChange={(e) => setEditEventNoticeNumber(e.target.value)} className={inp} />
               </Field>
@@ -2109,12 +2307,28 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                         onChange={(v) => setEditDetail(field.key, v)}
                       />
                     )}
+                    {field.type === "date" && (
+                      <input
+                        type="date"
+                        value={(editEventDetails[field.key] ?? "").slice(0, 10)}
+                        onChange={(e) => setEditDetail(field.key, e.target.value)}
+                        className={inp}
+                      />
+                    )}
                     {field.type === "text" && (
                       <input
                         type="text"
                         value={editEventDetails[field.key] ?? ""}
                         onChange={(e) => setEditDetail(field.key, e.target.value)}
                         className={inp}
+                      />
+                    )}
+                    {field.type === "textarea" && (
+                      <textarea
+                        value={editEventDetails[field.key] ?? ""}
+                        onChange={(e) => setEditDetail(field.key, e.target.value)}
+                        rows={3}
+                        className={`${inp} resize-none`}
                       />
                     )}
                     {field.type === "select" && (
@@ -2256,8 +2470,8 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
               </Field>
             )}
 
-            {/* Order Number / Notice Number — main events only */}
-            {!addEventParentId && (
+            {/* Order Number / Notice Number — main events only, not shown for Others */}
+            {!addEventParentId && eventCategory !== "others" && (
               <Field label={eventCategory === "notice_from_authority" ? "Notice Number / Document Identification Number (DIN)" : "Order Number"}>
                 <input type="text" value={eventNoticeNumber} onChange={(e) => setEventNoticeNumber(e.target.value)} className={inp} />
               </Field>
@@ -2271,8 +2485,14 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     {field.type === "datetime" && (
                       <DateTimeField value={eventDetails[field.key] ?? ""} onChange={(v) => setDetail(field.key, v)} />
                     )}
+                    {field.type === "date" && (
+                      <input type="date" value={(eventDetails[field.key] ?? "").slice(0, 10)} onChange={(e) => setDetail(field.key, e.target.value)} className={inp} />
+                    )}
                     {field.type === "text" && (
                       <input type="text" value={eventDetails[field.key] ?? ""} onChange={(e) => setDetail(field.key, e.target.value)} className={inp} />
+                    )}
+                    {field.type === "textarea" && (
+                      <textarea value={eventDetails[field.key] ?? ""} onChange={(e) => setDetail(field.key, e.target.value)} rows={3} className={`${inp} resize-none`} />
                     )}
                     {field.type === "select" && (
                       <select value={eventDetails[field.key] ?? ""} onChange={(e) => setDetail(field.key, e.target.value)} className={inp}>

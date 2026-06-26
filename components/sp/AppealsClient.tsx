@@ -633,7 +633,7 @@ export default function AppealsClient({
                         const s = STATUS_DISPLAY[appeal.status ?? "open"];
                         return s ? (
                           <span
-                            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}
+                            className={`inline-flex whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}
                           >
                             {s.label}
                           </span>

@@ -7,7 +7,7 @@ import { PER_PAGE_OPTIONS } from "@/lib/constants";
 import {
   createForm, updateForm, deleteForm, FormInput,
   addFormFile, deleteFormFile,
-  createTemplate, updateTemplate, updateTemplateFile, deleteTemplate,
+  createTemplate, updateTemplate, deleteTemplate, addTemplateFile, deleteTemplateFile,
   createResource, updateResource, deleteResource, addResourceFile, deleteResourceFile, ResourceInput,
 } from "@/app/(sp)/documents/actions";
 
@@ -39,14 +39,25 @@ interface Form {
   form_files: FormFile[];
 }
 
-interface Template {
+interface TemplateFile {
   id: string;
-  name: string;
-  description: string | null;
+  template_id: string;
+  file_name: string;
   file_url: string;
   file_type: string | null;
   file_size: number | null;
   created_at: string;
+}
+
+interface Template {
+  id: string;
+  name: string;
+  description: string | null;
+  file_url: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  created_at: string;
+  template_files: TemplateFile[];
 }
 
 interface ResourceFile {
@@ -349,8 +360,9 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [tplName, setTplName] = useState("");
   const [tplDesc, setTplDesc] = useState("");
-  const [tplFile, setTplFile] = useState<File | null>(null);
-  const [tplFileRemoved, setTplFileRemoved] = useState(false);
+  const [localTplFiles, setLocalTplFiles] = useState<TemplateFile[]>([]);
+  const [tplNewFiles, setTplNewFiles] = useState<File[]>([]);
+  const [deletingTplFileId, setDeletingTplFileId] = useState<string | null>(null);
   const [tplUploading, setTplUploading] = useState(false);
   const [tplError, setTplError] = useState<string | null>(null);
   const [deletingTplId, setDeletingTplId] = useState<string | null>(null);
@@ -437,7 +449,8 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
 
   function openAddTemplate() {
     setEditingTemplate(null);
-    setTplName(""); setTplDesc(""); setTplFile(null);
+    setTplName(""); setTplDesc("");
+    setLocalTplFiles([]); setTplNewFiles([]);
     setTplError(null);
     setShowTemplateModal(true);
   }
@@ -446,57 +459,58 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
     setEditingTemplate(t);
     setTplName(t.name);
     setTplDesc(t.description ?? "");
-    setTplFile(null);
-    setTplFileRemoved(false);
+    setLocalTplFiles(t.template_files ?? []);
+    setTplNewFiles([]);
     setTplError(null);
     setShowTemplateModal(true);
+  }
+
+  async function uploadTplFiles(templateId: string, files: File[]) {
+    const supabase = createClient();
+    for (const file of files) {
+      const path = `templates/${templateId}/${Date.now()}-${sanitize(file.name)}`;
+      const { data: up, error: upErr } = await supabase.storage.from("org-files").upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
+      if (upErr) throw new Error(`"${file.name}": ${upErr.message}`);
+      const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(up.path);
+      const ext = file.name.split(".").pop()?.toUpperCase();
+      await addTemplateFile(templateId, file.name, urlData.publicUrl, ext, file.size);
+    }
   }
 
   async function handleTemplateSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!tplName.trim()) { setTplError("Template name is required."); return; }
-    if (!editingTemplate && !tplFile) { setTplError("Please select a file."); return; }
-    if (editingTemplate && tplFileRemoved && !tplFile) { setTplError("Please select a replacement file since the current file was removed."); return; }
+    if (!editingTemplate && tplNewFiles.length === 0) { setTplError("Please select at least one file."); return; }
 
     setTplUploading(true);
     setTplError(null);
     try {
+      let templateId: string;
       if (editingTemplate) {
         await updateTemplate(editingTemplate.id, { name: tplName, description: tplDesc || undefined });
-        if (tplFile) {
-          const supabase = createClient();
-          const path = `templates/${Date.now()}-${sanitize(tplFile.name)}`;
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from("org-files")
-            .upload(path, tplFile, { upsert: false, contentType: tplFile.type || "application/octet-stream" });
-          if (uploadError) throw new Error(uploadError.message);
-          const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(uploadData.path);
-          const ext = tplFile.name.split(".").pop()?.toUpperCase();
-          await updateTemplateFile(editingTemplate.id, tplFile.name, urlData.publicUrl, ext, tplFile.size);
-        }
+        templateId = editingTemplate.id;
       } else {
-        const supabase = createClient();
-        const path = `templates/${Date.now()}-${sanitize(tplFile!.name)}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("org-files")
-          .upload(path, tplFile!, { upsert: false, contentType: tplFile!.type || "application/octet-stream" });
-        if (uploadError) throw new Error(uploadError.message);
-        const { data: urlData } = supabase.storage.from("org-files").getPublicUrl(uploadData.path);
-        const ext = tplFile!.name.split(".").pop()?.toUpperCase();
-        await createTemplate({
-          name: tplName,
-          description: tplDesc || undefined,
-          file_url: urlData.publicUrl,
-          file_type: ext,
-          file_size: tplFile!.size,
-        });
+        templateId = await createTemplate({ name: tplName, description: tplDesc || undefined });
       }
+      if (tplNewFiles.length > 0) await uploadTplFiles(templateId, tplNewFiles);
       setShowTemplateModal(false);
       router.refresh();
     } catch (err) {
       setTplError(err instanceof Error ? err.message : "Upload failed.");
     } finally {
       setTplUploading(false);
+    }
+  }
+
+  async function handleDeleteTplFile(fileId: string) {
+    setDeletingTplFileId(fileId);
+    try {
+      await deleteTemplateFile(fileId);
+      setLocalTplFiles((prev) => prev.filter((f) => f.id !== fileId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setDeletingTplFileId(null);
     }
   }
 
@@ -592,6 +606,36 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
     } finally {
       setDeletingResId(null);
     }
+  }
+
+  // ── Download popup state ───────────────────────────────────────────
+  interface DownloadPopupFile { file_name: string; file_url: string; file_type: string | null; file_size: number | null; }
+  interface DownloadPopup { title: string; files: DownloadPopupFile[]; }
+  const [downloadPopup, setDownloadPopup] = useState<DownloadPopup | null>(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
+
+  async function triggerDownload(url: string, fileName: string) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl; a.download = fileName;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(url, "_blank");
+    }
+  }
+
+  async function downloadAll(files: DownloadPopupFile[]) {
+    setDownloadingAll(true);
+    for (const file of files) {
+      await triggerDownload(file.file_url, file.file_name);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    setDownloadingAll(false);
   }
 
   // ── Search + pagination state ──────────────────────────────────────
@@ -772,6 +816,14 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                         </td>
                         <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-0.5">
+                            {(f.form_files ?? []).length > 0 && (
+                              <button
+                                onClick={() => setDownloadPopup({ title: f.rule_heading, files: (f.form_files ?? []).map(ff => ({ file_name: ff.file_name, file_url: ff.file_url, file_type: ff.file_type, file_size: ff.file_size })) })}
+                                title="Download files"
+                                className="p-1.5 rounded hover:bg-surface-hover transition-colors text-secondary hover:text-heading inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                              </button>
+                            )}
                             {canEdit && (
                               <button onClick={() => openEditForm(f)} title="Edit form"
                                 className="p-1.5 rounded hover:bg-surface-hover transition-colors text-accent hover:text-primary inline-flex">
@@ -842,8 +894,8 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                     <th className="text-center px-4 py-3 font-semibold text-heading w-10">#</th>
                     <th className="text-left px-4 py-3 font-semibold text-heading w-72">Template Name</th>
                     <th className="text-left px-4 py-3 font-semibold text-heading">Description</th>
-                    <th className="text-center px-4 py-3 font-semibold text-heading w-20">Size</th>
                     <th className="text-center px-4 py-3 font-semibold text-heading w-28 whitespace-nowrap">Uploaded on</th>
+                    <th className="text-center px-4 py-3 font-semibold text-heading w-16">Files</th>
                     <th className="text-center px-4 py-3 font-semibold text-heading w-28">Actions</th>
                   </tr>
                 </thead>
@@ -858,24 +910,37 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                     pagedTemplates.map((t, i) => (
                       <tr
                         key={t.id}
-                        onClick={() => window.open(t.file_url, "_blank")}
-                        className={`border-b border-border last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-page"} hover:bg-accent-light transition-colors cursor-pointer`}
+                        onClick={() => canEdit && openEditTemplate(t)}
+                        className={`border-b border-border last:border-0 ${i % 2 === 0 ? "bg-white" : "bg-page"} hover:bg-accent-light transition-colors ${canEdit ? "cursor-pointer" : ""}`}
                       >
                         <td className="px-4 py-3 text-center text-muted text-xs">{tplFrom + i}</td>
                         <td className="px-4 py-3 text-secondary" title={t.name}>
                           {t.name}
                         </td>
                         <td className="px-4 py-3 text-secondary truncate" title={t.description ?? ""}>{t.description ?? "—"}</td>
-                        <td className="px-4 py-3 text-center text-secondary">{fmtSize(t.file_size)}</td>
                         <td className="px-4 py-3 text-center text-secondary whitespace-nowrap">{fmtDate(t.created_at)}</td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center gap-0.5">
-                            <a href={t.file_url} target="_blank" rel="noopener noreferrer" title="Download"
-                              className="p-1.5 rounded hover:bg-surface-hover transition-colors text-accent hover:text-primary inline-flex">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        <td className="px-4 py-3 text-center">
+                          {(t.template_files ?? []).length === 0 ? (
+                            <span className="text-muted text-xs">—</span>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 text-accent">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                               </svg>
-                            </a>
+                              <span className="text-xs font-semibold">{(t.template_files ?? []).length}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-0.5">
+                            {(t.template_files ?? []).length > 0 && (
+                              <button
+                                onClick={() => setDownloadPopup({ title: t.name, files: (t.template_files ?? []).map(tf => ({ file_name: tf.file_name, file_url: tf.file_url, file_type: tf.file_type, file_size: tf.file_size })) })}
+                                title="Download files"
+                                className="p-1.5 rounded hover:bg-surface-hover transition-colors text-secondary hover:text-heading inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                              </button>
+                            )}
                             {canEdit && (
                               <button onClick={() => openEditTemplate(t)} title="Edit template"
                                 className="p-1.5 rounded hover:bg-surface-hover transition-colors text-accent hover:text-primary inline-flex">
@@ -985,6 +1050,14 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                         </td>
                         <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-0.5">
+                            {(r.resource_files ?? []).length > 0 && (
+                              <button
+                                onClick={() => setDownloadPopup({ title: r.description, files: (r.resource_files ?? []).map(rf => ({ file_name: rf.file_name, file_url: rf.file_url, file_type: rf.file_type, file_size: rf.file_size })) })}
+                                title="Download files"
+                                className="p-1.5 rounded hover:bg-surface-hover transition-colors text-secondary hover:text-heading inline-flex">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                              </button>
+                            )}
                             {canEdit && (
                               <button onClick={() => openEditResource(r)} title="Edit resource"
                                 className="p-1.5 rounded hover:bg-surface-hover transition-colors text-accent hover:text-primary inline-flex">
@@ -1166,14 +1239,16 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
       {/* ── MODAL: Add/Edit Template ── */}
       {showTemplateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 mx-4">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-heading">{editingTemplate ? "Edit Template" : "Upload Template"}</h2>
-              <button onClick={() => setShowTemplateModal(false)} className="text-muted hover:text-secondary">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white rounded-t-2xl px-6 pt-6 pb-4 border-b border-border">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-heading">{editingTemplate ? "Edit Template" : "Upload Template"}</h2>
+                <button onClick={() => setShowTemplateModal(false)} className="text-muted hover:text-secondary">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
             </div>
-            <form onSubmit={handleTemplateSubmit} className="space-y-3">
+            <form onSubmit={handleTemplateSubmit} className="px-6 py-4 space-y-4">
               {tplError && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{tplError}</div>}
               <div>
                 <label className="block text-xs font-medium text-secondary mb-1">Template Name <span className="text-red-500">*</span></label>
@@ -1183,69 +1258,83 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
                 <label className="block text-xs font-medium text-secondary mb-1">Description</label>
                 <textarea value={tplDesc} onChange={(e) => setTplDesc(e.target.value)} rows={2} placeholder="Brief description…" className={`${inp} resize-none`} />
               </div>
-              {!editingTemplate ? (
-                <div>
-                  <label className="block text-xs font-medium text-secondary mb-1">File <span className="text-red-500">*</span></label>
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx"
-                    onChange={(e) => setTplFile(e.target.files?.[0] ?? null)}
-                    className="block w-full text-sm text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark file:cursor-pointer cursor-pointer"
-                  />
-                  <p className="text-xs text-muted mt-1">Supported: PDF, Word (.doc, .docx), Excel (.xls, .xlsx)</p>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs font-medium text-secondary mb-1">File</label>
-                  {/* Current file row */}
-                  {!tplFileRemoved && editingTemplate.file_url && (() => {
-                    const fname = editingTemplate.file_url.split("/").pop() ?? "file";
-                    const badge = fileTypeBadge(editingTemplate.file_type ?? fname);
-                    return (
-                      <div className="mb-3 border border-border rounded-lg overflow-hidden">
-                        <div className="px-3 py-2.5 flex items-center justify-between gap-3 bg-white hover:bg-page transition">
+
+              {/* Files section */}
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-2">
+                  {editingTemplate ? "Files" : "Upload Files"} {!editingTemplate && <span className="text-red-500">*</span>}
+                </label>
+
+                {/* Existing files in edit mode */}
+                {editingTemplate && localTplFiles.length > 0 && (
+                  <div className="mb-3 border border-border rounded-lg divide-y divide-border overflow-hidden">
+                    {localTplFiles.map((f) => {
+                      const badge = fileTypeBadge(f.file_type ?? f.file_name);
+                      return (
+                        <div key={f.id} className="px-3 py-2.5 flex items-center justify-between gap-3 bg-white hover:bg-page">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className={`w-8 h-8 rounded-lg ${badge.bg} flex items-center justify-center flex-shrink-0`}>
                               <span className={`text-xs font-bold ${badge.text}`}>{badge.label}</span>
                             </div>
-                            <span className="text-xs font-medium text-heading truncate">{fname}</span>
-                            {editingTemplate.file_size && <span className="text-xs text-muted flex-shrink-0">{fmtSize(editingTemplate.file_size)}</span>}
+                            <span className="text-xs font-medium text-heading truncate">{f.file_name}</span>
+                            {f.file_size && <span className="text-xs text-muted flex-shrink-0">{fmtSize(f.file_size)}</span>}
                           </div>
                           <div className="flex items-center gap-0.5 flex-shrink-0">
-                            <a href={editingTemplate.file_url} target="_blank" rel="noopener noreferrer" title="View file"
+                            <a href={f.file_url} target="_blank" rel="noopener noreferrer" title="View"
                               className="p-1.5 rounded hover:bg-surface-hover transition-colors text-accent hover:text-primary inline-flex">
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             </a>
-                            <a href={editingTemplate.file_url} download={fname} title="Download"
+                            <a href={f.file_url} download={f.file_name} title="Download"
                               className="p-1.5 rounded hover:bg-surface-hover transition-colors text-secondary hover:text-heading inline-flex">
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                             </a>
-                            <button type="button" onClick={() => { setTplFileRemoved(true); setTplFile(null); }} title="Remove file"
-                              className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-400 hover:text-red-600 inline-flex">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
+                            {canEdit && (
+                              <button type="button" onClick={() => handleDeleteTplFile(f.id)} disabled={deletingTplFileId === f.id} title="Delete file"
+                                className="p-1.5 rounded hover:bg-red-50 transition-colors text-red-400 hover:text-red-600 inline-flex disabled:opacity-40">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            )}
                           </div>
                         </div>
-                      </div>
-                    );
-                  })()}
-                  {/* Replace / new file picker */}
-                  {tplFileRemoved && (
-                    <p className="text-xs text-amber-600 mb-2">File removed — upload a replacement to save.</p>
-                  )}
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx"
-                    onChange={(e) => setTplFile(e.target.files?.[0] ?? null)}
-                    className="block w-full text-sm text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark file:cursor-pointer cursor-pointer"
-                  />
-                  {tplFile && <p className="text-xs text-secondary mt-1">Selected: {tplFile.name}</p>}
-                  <p className="text-xs text-muted mt-1">
-                    {tplFileRemoved ? "Replacement required — cannot save without a file." : "Select a file to replace the current one."}
-                  </p>
-                </div>
-              )}
-              <div className="flex gap-3 pt-2">
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* New files picker */}
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                  onChange={(e) => setTplNewFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])])}
+                  className="block w-full text-sm text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark file:cursor-pointer cursor-pointer"
+                />
+                {tplNewFiles.length > 0 && (
+                  <div className="mt-2 border border-border rounded-lg divide-y divide-surface-hover overflow-hidden">
+                    {tplNewFiles.map((file, idx) => {
+                      const badge = fileTypeBadge(file.name);
+                      return (
+                        <div key={idx} className="flex items-center gap-3 px-3 py-2 bg-warning-light">
+                          <div className={`w-7 h-7 rounded ${badge.bg} flex items-center justify-center flex-shrink-0`}>
+                            <span className={`text-xs font-bold ${badge.text}`}>{badge.label}</span>
+                          </div>
+                          <span className="text-xs text-heading flex-1 min-w-0 truncate">{file.name}</span>
+                          <span className="text-xs text-muted flex-shrink-0">{fmtSize(file.size)}</span>
+                          <button type="button" onClick={() => setTplNewFiles((prev) => prev.filter((_, i) => i !== idx))}
+                            className="p-1 rounded hover:bg-surface-hover text-red-400 hover:text-red-600 flex-shrink-0">
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-muted mt-1">PDF, Word, Excel, PowerPoint — multiple files allowed</p>
+              </div>
+
+              <div className="flex gap-3 pt-2 pb-2">
                 {editingTemplate && canDelete && (
                   <button type="button" onClick={() => { setShowTemplateModal(false); setConfirmDeleteTpl(editingTemplate); }}
                     className="px-4 py-2 text-sm border border-red-200 text-red-600 hover:bg-red-50 rounded-lg transition">
@@ -1431,6 +1520,65 @@ export default function DocumentsClient({ forms, templates, resources, acts, can
               <button onClick={() => setConfirmDeleteRes(null)} className="flex-1 px-4 py-2 text-sm border border-border rounded-lg text-heading hover:bg-page transition">Cancel</button>
               <button onClick={() => handleDeleteResource(confirmDeleteRes)} disabled={deletingResId === confirmDeleteRes.id} className="flex-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-60">
                 {deletingResId === confirmDeleteRes.id ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DOWNLOAD POPUP ── */}
+      {downloadPopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={() => setDownloadPopup(null)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-border w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border">
+              <div className="min-w-0 pr-3">
+                <h3 className="text-sm font-semibold text-heading">Download Files</h3>
+                <p className="text-xs text-muted mt-0.5 line-clamp-2" title={downloadPopup.title}>{downloadPopup.title}</p>
+              </div>
+              <button onClick={() => setDownloadPopup(null)} className="p-1 text-muted hover:text-secondary flex-shrink-0 mt-0.5">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* File list */}
+            <div className="px-3 py-3 space-y-0.5 max-h-72 overflow-y-auto">
+              {downloadPopup.files.map((file, i) => {
+                const badge = fileTypeBadge(file.file_type ?? file.file_name);
+                return (
+                  <div key={i} className="flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-page group">
+                    <div className={`w-8 h-8 rounded-lg ${badge.bg} flex items-center justify-center flex-shrink-0`}>
+                      <span className={`text-xs font-bold ${badge.text}`}>{badge.label}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-heading truncate">{file.file_name}</p>
+                      {file.file_size && <p className="text-xs text-muted">{fmtSize(file.file_size)}</p>}
+                    </div>
+                    <button
+                      onClick={() => triggerDownload(file.file_url, file.file_name)}
+                      title={`Download ${file.file_name}`}
+                      className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-surface-hover transition-all text-secondary hover:text-primary flex-shrink-0">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 pb-5 pt-3 border-t border-border">
+              <button
+                onClick={() => downloadAll(downloadPopup.files)}
+                disabled={downloadingAll}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition disabled:opacity-60">
+                {downloadingAll ? (
+                  <span>Downloading…</span>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Download All ({downloadPopup.files.length})
+                  </>
+                )}
               </button>
             </div>
           </div>
