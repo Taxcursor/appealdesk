@@ -10,6 +10,7 @@ interface AppealProceeding {
   id: string;
   status: string | null;
   deleted_at: string | null;
+  created_at: string;
   proceeding_type: { id: string; name: string } | null;
 }
 
@@ -635,7 +636,9 @@ export default function AppealsClient({
                 </tr>
               ) : (
                 appeals.map((appeal, i) => {
-                  const procs = (appeal.proceedings ?? []).filter(p => !p.deleted_at);
+                  const procs = [...(appeal.proceedings ?? [])]
+                    .filter(p => !p.deleted_at)
+                    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                   const rowNum = rowOffset + i + 1;
                   const s = STATUS_DISPLAY[appeal.status ?? "open"];
                   return (

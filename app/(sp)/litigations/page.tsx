@@ -10,7 +10,7 @@ const APPEAL_SELECT = `
   financial_year:master_records!financial_year_id(id, name),
   assessment_year:master_records!assessment_year_id(id, name),
   client_org:organizations!client_org_id(id, name),
-  proceedings(id, status, deleted_at, proceeding_type:master_records!proceeding_type_id(id, name))
+  proceedings(id, status, deleted_at, created_at, proceeding_type:master_records!proceeding_type_id(id, name))
 `;
 
 function parseMulti(val: string | string[] | undefined): string[] {
