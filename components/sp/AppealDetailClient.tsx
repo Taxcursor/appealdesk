@@ -1224,7 +1224,7 @@ function Modal({ title, onClose, isDirty, size = "md", children }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className={`bg-white rounded-xl shadow-xl border border-border w-full ${size === "lg" ? "max-w-4xl" : "max-w-2xl"} max-h-[90vh] flex flex-col`}>
+      <div className={`bg-white rounded-xl shadow-xl border border-border w-full ${size === "lg" ? "max-w-5xl h-[88vh]" : "max-w-2xl max-h-[90vh]"} flex flex-col`}>
         <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
           <h3 className="text-base font-semibold text-heading">{title}</h3>
           <button onClick={handleClose} className="text-muted hover:text-secondary">
@@ -2213,13 +2213,7 @@ export default function AppealDetailClient({ appeal, clients, teamMembers, clien
                     })()}
                   </div>
                 )}
-                {/* Demand Amounts (read-only) */}
-                {isExpanded && (
-                  <div className="border-t border-border px-5 py-4">
-                    <p className="text-xs font-semibold text-heading mb-3">Demand Amounts</p>
-                    <DemandIssuesReadOnly issues={demandIssuesByProc[proc.id] ?? []} />
-                  </div>
-                )}
+
               </div>
             );
           })}
