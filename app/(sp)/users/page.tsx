@@ -51,7 +51,7 @@ export default async function UsersPage({
   const { data: users } = await supabase
     .from("users")
     .select(`
-      id, first_name, middle_name, last_name, email, mobile_number, mobile_country_code,
+      id, first_name, middle_name, last_name, email,
       role, designation, department, is_active, created_at, org_id,
       organization:organizations!org_id(id, name, type)
     `)
@@ -70,7 +70,6 @@ export default async function UsersPage({
       <UsersClient
         users={normalizedUsers}
         currentUserId={user!.id}
-        userId={user!.id}
         isAdmin={isAdmin}
         clientOrgs={clientOrgsForImport ?? []}
         currentTab={currentTab as "team" | "clients"}

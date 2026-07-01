@@ -288,23 +288,3 @@ export interface SessionUser {
   avatar_url?: string | null;
   must_change_password?: boolean;
 }
-
-// ─── Proceeding Demand Issues ─────────────────────────────────────────────────
-
-export interface DemandIssue {
-  id: string;
-  proceeding_id: string;
-  notice_no: string;
-  notice_date: string | null;
-  description: string;
-  tax_demanded: number;
-  tax_acceptable: number;
-  interest_demanded: number;
-  interest_acceptable: number;
-  penalty_demanded: number;
-  penalty_acceptable: number;
-  sort_order: number;
-  created_at: string;
-}
-
-export type DemandIssueInput = Omit<DemandIssue, "id" | "proceeding_id" | "created_at">;

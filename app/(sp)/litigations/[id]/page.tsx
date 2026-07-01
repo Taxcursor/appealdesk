@@ -24,7 +24,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
         proceeding_type:master_records!proceeding_type_id(id, name),
         jurisdiction, jurisdiction_city, importance, mode, status,
         initiated_on, to_be_completed_by, assigned_to_ids, client_staff_ids,
-        possible_outcome, is_active, created_at,
+        possible_outcome, is_active, created_at, gst_number, contacts,
         events(
           id, event_type, category, parent_event_id, event_date, status, event_notice_number, description, details, created_at, deleted_at,
           event_documents(id, file_name, file_url, file_size, description, created_at, deleted_at)
@@ -39,7 +39,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
 
   const clientOrgId = (appeal as any).client_org_id as string;
 
-  const [{ data: clients }, { data: teamMembers }, { data: clientUsers }, { data: masters }, { data: panRow }] = await Promise.all([
+  const [{ data: clients }, { data: teamMembers }, { data: clientUsers }, { data: masters }, { data: panRow }, { data: gstRows }] = await Promise.all([
     supabase
       .from("organizations")
       .select("id, name")
@@ -72,6 +72,11 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
       .eq("org_id", clientOrgId)
       .eq("type", "pan")
       .maybeSingle(),
+    supabase
+      .from("compliance_details")
+      .select("number")
+      .eq("org_id", clientOrgId)
+      .eq("type", "gst"),
   ]);
 
   const mastersByType = (masters ?? []).reduce((acc, rec) => {
@@ -82,6 +87,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
 
   const clientOrg = (appeal.client_org as any) ?? null;
   const clientPan = panRow?.number ?? undefined;
+  const clientGstNumbers = (gstRows ?? []).map((r: any) => r.number).filter(Boolean) as string[];
 
   return (
     <div className="p-8">
@@ -99,6 +105,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
         mastersByType={mastersByType}
         canEdit={user?.role === "sp_admin" || user?.role === "sp_staff"}
         clientPan={clientPan}
+        clientGstNumbers={clientGstNumbers}
       />
     </div>
   );

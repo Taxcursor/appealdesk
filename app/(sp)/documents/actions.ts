@@ -155,31 +155,26 @@ export async function removeFormFile(id: string) {
 export interface TemplateInput {
   name: string;
   description?: string;
-  file_url: string;
-  file_type?: string;
-  file_size?: number;
 }
 
-export async function createTemplate(input: TemplateInput) {
+export async function createTemplate(input: TemplateInput): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
 
-  const { error } = await supabase.from("templates").insert({
+  const { data, error } = await supabase.from("templates").insert({
     service_provider_id: spId,
     created_by: user.id,
     name: input.name,
     description: input.description || null,
-    file_url: input.file_url,
-    file_type: input.file_type || null,
-    file_size: input.file_size || null,
-  });
+  }).select("id").single();
 
   if (error) throw new Error(error.message);
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Template: ${input.name}` });
   revalidatePath("/documents");
+  return data.id;
 }
 
 export async function updateTemplate(id: string, input: Pick<TemplateInput, "name" | "description">) {
@@ -199,6 +194,24 @@ export async function updateTemplate(id: string, input: Pick<TemplateInput, "nam
   revalidatePath("/documents");
 }
 
+export async function updateTemplateFile(id: string, fileName: string, fileUrl: string, fileType?: string, fileSize?: number) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  const { data: template } = await supabase.from("templates").select("name").eq("id", id).eq("service_provider_id", spId!).single();
+  const { error } = await supabase.from("templates").update({
+    file_url: fileUrl,
+    file_type: fileType || null,
+    file_size: fileSize || null,
+  }).eq("id", id).eq("service_provider_id", spId!);
+  if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "update", entityType: "document", entityLabel: `Template: ${template?.name ?? id} (file replaced: ${fileName})` });
+  revalidatePath("/documents");
+}
+
 export async function deleteTemplate(id: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
@@ -209,6 +222,43 @@ export async function deleteTemplate(id: string) {
   const { data: template } = await supabase.from("templates").select("name").eq("id", id).eq("service_provider_id", spId!).single();
   await supabase.from("templates").delete().eq("id", id).eq("service_provider_id", spId!);
   await logAction(supabase, { actorId: user.id, spId: spId!, action: "delete", entityType: "document", entityLabel: `Template: ${template?.name ?? id}` });
+  revalidatePath("/documents");
+}
+
+// ── TEMPLATE FILES ─────────────────────────────────────
+
+export async function addTemplateFile(templateId: string, fileName: string, fileUrl: string, fileType?: string, fileSize?: number): Promise<string> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  const { data, error } = await supabase.from("template_files").insert({
+    template_id: templateId,
+    file_name: fileName,
+    file_url: fileUrl,
+    file_type: fileType || null,
+    file_size: fileSize || null,
+  }).select("id").single();
+
+  if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "create", entityType: "document", entityLabel: `Template file: ${fileName}` });
+  revalidatePath("/documents");
+  return data.id;
+}
+
+export async function deleteTemplateFile(fileId: string): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  spOnly(user.role);
+  const spId = user.service_provider_id ?? user.org_id;
+  const supabase = await createServiceClient();
+
+  const { data: file } = await supabase.from("template_files").select("file_name").eq("id", fileId).single();
+  const { error } = await supabase.from("template_files").delete().eq("id", fileId);
+  if (error) throw new Error(error.message);
+  await logAction(supabase, { actorId: user.id, spId: spId!, action: "delete", entityType: "document", entityLabel: `Template file: ${file?.file_name ?? fileId}` });
   revalidatePath("/documents");
 }
 

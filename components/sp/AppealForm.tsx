@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createAppeal, uploadProceedingDocument, AppealInput, ProceedingInput } from "@/app/(sp)/litigations/actions";
 
@@ -136,6 +136,9 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
   const [possibleOutcome, setPossibleOutcome] = useState("");
   const [proceedingStatus, setProceedingStatus] = useState("open");
 
+  const [gstNumbers, setGstNumbers] = useState<string[]>([]);
+  const [gstNumber, setGstNumber] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<{ file: File; desc: string }[]>([]);
@@ -145,7 +148,9 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
   const actName = selectedAct?.name;
   const isITAct1961 = actName === "The Income-tax Act, 1961";
   const isITAct2025 = actName === "The Income-tax Act, 2025";
+  const isGSTAct = !!(actName?.toLowerCase().includes("central goods") || actName?.toLowerCase().includes("gst"));
   const hideAY = !!(actName?.includes("Income-tax Act, 2025") || actName?.toLowerCase().includes("central goods"));
+  const isFaceless = mode === "faceless" || authorityType.trim().toLowerCase() === "faceless";
 
   // AY only available for IT Act 1961, and only for FY up to 2025-26
   const selectedFY = (mastersByType["financial_year"] ?? []).find(m => m.id === financialYearId);
@@ -160,11 +165,27 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
     ? (mastersByType["proceeding_type"] ?? []).filter(m => m.parent_id === actRegulationId)
     : [];
 
+  // Fetch GST numbers for selected client whenever client changes
+  useEffect(() => {
+    if (!clientOrgId) { setGstNumbers([]); setGstNumber(""); return; }
+    const supabase = createClient();
+    supabase
+      .from("compliance_details")
+      .select("number")
+      .eq("org_id", clientOrgId)
+      .eq("type", "gst")
+      .then(({ data }) => {
+        setGstNumbers((data ?? []).map((r: { number: string }) => r.number).filter(Boolean));
+        setGstNumber("");
+      });
+  }, [clientOrgId]);
+
   function handleActChange(actId: string) {
     setActRegulationId(actId);
     setProceedingTypeId("");
     setFinancialYearId("");
     setAssessmentYearId("");
+    setGstNumber("");
   }
 
   function handleFYChange(fyId: string) {
@@ -204,6 +225,7 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
         client_staff_ids: clientStaffIds,
         possible_outcome: possibleOutcome,
         status: proceedingStatus,
+        gst_number: gstNumber || undefined,
       };
       const { appealId, proceedingId } = await createAppeal(appeal, proc);
       if (pendingFiles.length > 0) {
@@ -282,18 +304,43 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
               {[...availableProceedings].sort((a, b) => a.name.localeCompare(b.name)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </Field>
-          <Field label="Authority Type">
+          {isGSTAct && (
+            <Field label="GST Number">
+              <select
+                value={gstNumber}
+                onChange={(e) => setGstNumber(e.target.value)}
+                className={inp}
+                disabled={!clientOrgId}
+              >
+                <option value="">{clientOrgId ? (gstNumbers.length ? "Select GST number…" : "No GST numbers on file") : "Select client first"}</option>
+                {gstNumbers.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Jurisdiction">
             <input value={authorityType} onChange={(e) => setAuthorityType(e.target.value)} className={inp} />
           </Field>
           <Field label="Authority Name">
             <input value={authorityName} onChange={(e) => setAuthorityName(e.target.value)} placeholder="e.g. ACIT, Circle 1(1)" className={inp} />
           </Field>
           <Field label="Jurisdiction City">
-            <input value={jurisdictionCity} onChange={(e) => setJurisdictionCity(e.target.value)} placeholder="e.g. Chennai" className={inp} />
+            <input
+              value={isFaceless ? "" : jurisdictionCity}
+              onChange={(e) => setJurisdictionCity(e.target.value)}
+              placeholder={isFaceless ? "N/A — Faceless" : "e.g. Chennai"}
+              disabled={isFaceless}
+              className={`${inp} ${isFaceless ? "bg-surface-hover text-muted cursor-not-allowed" : ""}`}
+            />
           </Field>
           <div className="col-span-2">
             <Field label="Jurisdiction / Address">
-              <input value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)} placeholder="Full jurisdiction or address" className={inp} />
+              <input
+                value={isFaceless ? "" : jurisdiction}
+                onChange={(e) => setJurisdiction(e.target.value)}
+                placeholder={isFaceless ? "N/A — Faceless" : "Full jurisdiction or address"}
+                disabled={isFaceless}
+                className={`${inp} ${isFaceless ? "bg-surface-hover text-muted cursor-not-allowed" : ""}`}
+              />
             </Field>
           </div>
           <Field label="Importance">
@@ -308,14 +355,15 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
           <Field label="Mode">
             <select value={mode} onChange={(e) => setMode(e.target.value)} className={inp}>
               <option value="">Select…</option>
-              <option value="online">Online</option>
-              <option value="offline">Offline / Physical</option>
+              <option value="faceless">Faceless</option>
+              <option value="jurisdictional">Jurisdictional</option>
+              <option value="both">Both</option>
             </select>
           </Field>
           <Field label="Initiated On">
             <input type="date" value={initiatedOn} onChange={(e) => setInitiatedOn(e.target.value)} className={inp} />
           </Field>
-          <Field label="To Be Completed By">
+          <Field label="Limitation Date">
             <input type="date" value={toBeCompletedBy} onChange={(e) => setToBeCompletedBy(e.target.value)} className={inp} />
           </Field>
           <Field label="Assigned To">

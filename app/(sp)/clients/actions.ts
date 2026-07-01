@@ -66,9 +66,10 @@ export async function createClientOrg(input: ClientInput) {
     (c) => c.number || c.login_id || c.attachment_url
   );
   if (complianceRows.length > 0) {
-    await supabase.from("compliance_details").insert(
+    const { error: compError } = await supabase.from("compliance_details").insert(
       complianceRows.map((c) => ({ ...c, org_id: org.id }))
     );
+    if (compError) throw new Error(`Failed to save compliance details: ${compError.message}`);
   }
 
   await logAction(supabase, { actorId: user.id, spId: user.org_id!, action: "create", entityType: "organization", entityLabel: input.name });
@@ -113,9 +114,10 @@ export async function updateClientOrg(id: string, input: ClientInput) {
     (c) => c.number || c.login_id || c.attachment_url
   );
   if (complianceRows.length > 0) {
-    await supabase.from("compliance_details").insert(
+    const { error: compError } = await supabase.from("compliance_details").insert(
       complianceRows.map((c) => ({ ...c, org_id: id }))
     );
+    if (compError) throw new Error(`Failed to save compliance details: ${compError.message}`);
   }
 
   await logAction(supabase, { actorId: user.id, spId: user.org_id!, action: "update", entityType: "organization", entityLabel: input.name });

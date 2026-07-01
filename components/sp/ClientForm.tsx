@@ -112,20 +112,29 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
     return init;
   });
 
-  const [extraRows, setExtraRows] = useState<ExtraRow[]>(() =>
-    (initialCompliance ?? [])
-      .filter((c) => !FIXED_TYPES.includes(c.type))
+  const [extraRows, setExtraRows] = useState<ExtraRow[]>(() => {
+    // For gst: first row goes to the fixed section, any additional rows appear here.
+    // All other fixed types (pan, aadhaar, tan) only ever live in the fixed section.
+    let firstGstConsumed = false;
+    return (initialCompliance ?? [])
+      .filter((c) => {
+        if (c.type === "gst") {
+          if (!firstGstConsumed) { firstGstConsumed = true; return false; }
+          return true;
+        }
+        return !FIXED_TYPES.includes(c.type);
+      })
       .map((c) => ({
         rowId: crypto.randomUUID(),
-        type: c.type,
+        type: c.type === "gst" ? "GST" : c.type,
         number: c.number ?? "",
         login_id: c.login_id ?? "",
         credential: c.credential ?? "",
         attachment_url: c.attachment_url ?? "",
         showCredential: false,
         uploading: false,
-      }))
-  );
+      }));
+  });
 
   function updateCompliance(type: string, field: keyof ComplianceState, value: string | boolean) {
     setCompliance((prev) => ({ ...prev, [type]: { ...prev[type], [field]: value } }));
@@ -208,7 +217,7 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
         attachment_url: compliance[key].attachment_url || undefined,
       })),
       ...extraRows.map((r) => ({
-        type: r.type,
+        type: r.type.toLowerCase() === "gst" ? "gst" : r.type,
         number: r.number || undefined,
         login_id: r.login_id || undefined,
         credential: r.credential || undefined,

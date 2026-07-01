@@ -64,7 +64,7 @@ function cleanProceeding(proc: ProceedingInput) {
     jurisdiction: proc.jurisdiction || null,
     jurisdiction_city: proc.jurisdiction_city || null,
     importance: (proc.importance as "critical" | "high" | "medium" | "low") || null,
-    mode: (proc.mode as "online" | "offline") || null,
+    mode: (proc.mode as "faceless" | "jurisdictional" | "both") || null,
     initiated_on: proc.initiated_on || null,
     to_be_completed_by: proc.to_be_completed_by || null,
     assigned_to: proc.assigned_to_ids?.[0] || null,
@@ -89,6 +89,7 @@ const EVENT_CATEGORY_LABELS: Record<string, string> = {
   others: "Others",
   response_to_notice: "Response to Notice",
   adjournment_request: "Adjournment Request",
+  hearing_proceedings: "Hearing Proceedings",
   personal_follow_up: "Personal Follow-up",
   others_sub: "Others",
 };
@@ -524,7 +525,6 @@ export interface ReportEvent {
   event_notice_number: string;
   description: string;
   status: string;
-  details: Record<string, string>;
 }
 
 export interface ReportDocument {
@@ -563,7 +563,7 @@ const REPORT_PROCEEDING_SELECT = `
 
 const REPORT_EVENT_SELECT = `
   id, proceeding_id, event_type, category, parent_event_id,
-  event_date, event_notice_number, description, status, details
+  event_date, event_notice_number, description, status
 `;
 
 export async function exportLitigationsReport(
@@ -727,7 +727,6 @@ export async function exportLitigationsReport(
       event_notice_number: e.event_notice_number ?? "",
       description: e.description ?? "",
       status: e.status ?? "",
-      details: (e.details ?? {}) as Record<string, string>,
     };
   });
 
@@ -754,243 +753,4 @@ export async function exportLitigationsReport(
     eventDocuments,
     generatedAt: new Date().toISOString(),
   };
-}
-
-// ── Single-litigation report (all proceedings + events + docs) ────
-
-export async function getLitigationReport(appealId: string): Promise<LitigationReportData> {
-  const user = await getCurrentUser();
-  if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
-  const spId = user.service_provider_id ?? user.org_id;
-  const supabase = await createServiceClient();
-
-  const { data: spOrg } = await supabase.from("organizations").select("name").eq("id", spId!).single();
-  const spName = spOrg?.name ?? "";
-
-  const { data: rawAppeals, error: aErr } = await supabase
-    .from("appeals")
-    .select(REPORT_APPEAL_SELECT)
-    .eq("id", appealId)
-    .eq("service_provider_id", spId!)
-    .is("deleted_at", null);
-  if (aErr) throw new Error(aErr.message);
-  if (!rawAppeals || rawAppeals.length === 0) {
-    return { spName, appeals: [], proceedings: [], events: [], proceedingDocuments: [], eventDocuments: [], generatedAt: new Date().toISOString() };
-  }
-
-  const { data: rawProceedings } = await supabase
-    .from("proceedings")
-    .select(REPORT_PROCEEDING_SELECT)
-    .eq("appeal_id", appealId)
-    .eq("service_provider_id", spId!)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true });
-
-  const proceedingIds = (rawProceedings ?? []).map((p: any) => p.id);
-
-  let rawEvents: any[] = [];
-  if (proceedingIds.length > 0) {
-    const { data: evtData } = await supabase
-      .from("events")
-      .select(REPORT_EVENT_SELECT)
-      .in("proceeding_id", proceedingIds)
-      .is("deleted_at", null)
-      .order("event_date", { ascending: true, nullsFirst: false });
-    rawEvents = evtData ?? [];
-  }
-
-  const eventIds = rawEvents.map((e: any) => e.id);
-
-  let rawProcDocs: any[] = [];
-  if (proceedingIds.length > 0) {
-    const { data: pd } = await supabase
-      .from("proceeding_documents")
-      .select("id, proceeding_id, file_name, description")
-      .in("proceeding_id", proceedingIds)
-      .is("deleted_at", null);
-    rawProcDocs = pd ?? [];
-  }
-
-  let rawEventDocs: any[] = [];
-  if (eventIds.length > 0) {
-    const { data: ed } = await supabase
-      .from("event_documents")
-      .select("id, event_id, file_name, description")
-      .in("event_id", eventIds)
-      .is("deleted_at", null);
-    rawEventDocs = ed ?? [];
-  }
-
-  const allUserIds = [...new Set((rawProceedings ?? []).flatMap((p: any) => p.assigned_to_ids ?? []))];
-  const userNameMap = new Map<string, string>();
-  if (allUserIds.length > 0) {
-    const { data: userRows } = await supabase.from("users").select("id, first_name, last_name").in("id", allUserIds);
-    (userRows ?? []).forEach((u: any) => userNameMap.set(u.id, [u.first_name, u.last_name].filter(Boolean).join(" ")));
-  }
-
-  const appealMap = new Map<string, any>(rawAppeals.map((a: any) => [a.id, a]));
-
-  const appeals: ReportAppeal[] = rawAppeals.map((a: any) => ({
-    id: a.id,
-    client_name: (a.client_org as any)?.name ?? "",
-    act_name: (a.act_regulation as any)?.name ?? "",
-    financial_year: (a.financial_year as any)?.name ?? "",
-    assessment_year: (a.assessment_year as any)?.name ?? "",
-    status: a.status ?? "",
-    created_at: a.created_at ?? "",
-  }));
-
-  const proceedings: ReportProceeding[] = (rawProceedings ?? []).map((p: any) => {
-    const parentAppeal = appealMap.get(p.appeal_id);
-    return {
-      id: p.id,
-      appeal_id: p.appeal_id,
-      client_name: (parentAppeal?.client_org as any)?.name ?? "",
-      proceeding_type: (p.proceeding_type as any)?.name ?? "",
-      authority_type: p.authority_type ?? "",
-      authority_name: p.authority_name ?? "",
-      jurisdiction: p.jurisdiction ?? "",
-      jurisdiction_city: p.jurisdiction_city ?? "",
-      importance: p.importance ?? "",
-      mode: p.mode ?? "",
-      initiated_on: p.initiated_on ?? "",
-      to_be_completed_by: p.to_be_completed_by ?? "",
-      assigned_names: (p.assigned_to_ids ?? []).map((id: string) => userNameMap.get(id) ?? "").filter(Boolean).join(", "),
-      possible_outcome: p.possible_outcome ?? "",
-      status: p.status ?? "",
-    };
-  });
-
-  const procAppealMap = new Map<string, string>((rawProceedings ?? []).map((p: any) => [p.id, p.appeal_id]));
-
-  const events: ReportEvent[] = rawEvents.map((e: any) => {
-    const aid = procAppealMap.get(e.proceeding_id) ?? "";
-    const parentAppeal = appealMap.get(aid);
-    return {
-      id: e.id,
-      proceeding_id: e.proceeding_id,
-      appeal_id: aid,
-      client_name: (parentAppeal?.client_org as any)?.name ?? "",
-      event_type: e.event_type ?? "",
-      parent_event_id: e.parent_event_id ?? null,
-      category: e.category ?? "",
-      event_date: e.event_date ?? "",
-      event_notice_number: e.event_notice_number ?? "",
-      description: e.description ?? "",
-      status: e.status ?? "",
-      details: (e.details ?? {}) as Record<string, string>,
-    };
-  });
-
-  const proceedingDocuments: ReportDocument[] = rawProcDocs.map((d: any) => ({ id: d.id, parent_id: d.proceeding_id, file_name: d.file_name ?? "", description: d.description ?? "" }));
-  const eventDocuments: ReportDocument[] = rawEventDocs.map((d: any) => ({ id: d.id, parent_id: d.event_id, file_name: d.file_name ?? "", description: d.description ?? "" }));
-
-  return { spName, appeals, proceedings, events, proceedingDocuments, eventDocuments, generatedAt: new Date().toISOString() };
-}
-
-// ── Single-proceeding report (parent appeal header + 1 proceeding) ─
-
-export async function getProceedingReport(proceedingId: string): Promise<LitigationReportData> {
-  const user = await getCurrentUser();
-  if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
-  const spId = user.service_provider_id ?? user.org_id;
-  const supabase = await createServiceClient();
-
-  const { data: spOrg } = await supabase.from("organizations").select("name").eq("id", spId!).single();
-  const spName = spOrg?.name ?? "";
-
-  const { data: rawProc } = await supabase
-    .from("proceedings")
-    .select(REPORT_PROCEEDING_SELECT)
-    .eq("id", proceedingId)
-    .eq("service_provider_id", spId!)
-    .is("deleted_at", null)
-    .single();
-  if (!rawProc) return { spName, appeals: [], proceedings: [], events: [], proceedingDocuments: [], eventDocuments: [], generatedAt: new Date().toISOString() };
-
-  const { data: rawAppeals } = await supabase
-    .from("appeals")
-    .select(REPORT_APPEAL_SELECT)
-    .eq("id", (rawProc as any).appeal_id)
-    .is("deleted_at", null);
-
-  const { data: rawEvents } = await supabase
-    .from("events")
-    .select(REPORT_EVENT_SELECT)
-    .eq("proceeding_id", proceedingId)
-    .is("deleted_at", null)
-    .order("event_date", { ascending: true, nullsFirst: false });
-
-  const rawEventsArr: any[] = rawEvents ?? [];
-  const eventIds = rawEventsArr.map((e: any) => e.id);
-
-  const { data: procDocsRaw } = await supabase
-    .from("proceeding_documents")
-    .select("id, proceeding_id, file_name, description")
-    .eq("proceeding_id", proceedingId)
-    .is("deleted_at", null);
-
-  let rawEventDocs: any[] = [];
-  if (eventIds.length > 0) {
-    const { data: ed } = await supabase.from("event_documents").select("id, event_id, file_name, description").in("event_id", eventIds).is("deleted_at", null);
-    rawEventDocs = ed ?? [];
-  }
-
-  const assignedIds: string[] = (rawProc as any).assigned_to_ids ?? [];
-  const userNameMap = new Map<string, string>();
-  if (assignedIds.length > 0) {
-    const { data: userRows } = await supabase.from("users").select("id, first_name, last_name").in("id", assignedIds);
-    (userRows ?? []).forEach((u: any) => userNameMap.set(u.id, [u.first_name, u.last_name].filter(Boolean).join(" ")));
-  }
-
-  const rawAppeal = rawAppeals?.[0] as any;
-  const appeals: ReportAppeal[] = rawAppeal ? [{
-    id: rawAppeal.id,
-    client_name: rawAppeal.client_org?.name ?? "",
-    act_name: rawAppeal.act_regulation?.name ?? "",
-    financial_year: rawAppeal.financial_year?.name ?? "",
-    assessment_year: rawAppeal.assessment_year?.name ?? "",
-    status: rawAppeal.status ?? "",
-    created_at: rawAppeal.created_at ?? "",
-  }] : [];
-
-  const proceedings: ReportProceeding[] = [{
-    id: (rawProc as any).id,
-    appeal_id: (rawProc as any).appeal_id,
-    client_name: rawAppeal?.client_org?.name ?? "",
-    proceeding_type: (rawProc as any).proceeding_type?.name ?? "",
-    authority_type: (rawProc as any).authority_type ?? "",
-    authority_name: (rawProc as any).authority_name ?? "",
-    jurisdiction: (rawProc as any).jurisdiction ?? "",
-    jurisdiction_city: (rawProc as any).jurisdiction_city ?? "",
-    importance: (rawProc as any).importance ?? "",
-    mode: (rawProc as any).mode ?? "",
-    initiated_on: (rawProc as any).initiated_on ?? "",
-    to_be_completed_by: (rawProc as any).to_be_completed_by ?? "",
-    assigned_names: assignedIds.map((id) => userNameMap.get(id) ?? "").filter(Boolean).join(", "),
-    possible_outcome: (rawProc as any).possible_outcome ?? "",
-    status: (rawProc as any).status ?? "",
-  }];
-
-  const events: ReportEvent[] = rawEventsArr.map((e: any) => ({
-    id: e.id,
-    proceeding_id: e.proceeding_id,
-    appeal_id: (rawProc as any).appeal_id,
-    client_name: rawAppeal?.client_org?.name ?? "",
-    event_type: e.event_type ?? "",
-    parent_event_id: e.parent_event_id ?? null,
-    category: e.category ?? "",
-    event_date: e.event_date ?? "",
-    event_notice_number: e.event_notice_number ?? "",
-    description: e.description ?? "",
-    status: e.status ?? "",
-    details: (e.details ?? {}) as Record<string, string>,
-  }));
-
-  const proceedingDocuments: ReportDocument[] = (procDocsRaw ?? []).map((d: any) => ({ id: d.id, parent_id: d.proceeding_id, file_name: d.file_name ?? "", description: d.description ?? "" }));
-  const eventDocuments: ReportDocument[] = rawEventDocs.map((d: any) => ({ id: d.id, parent_id: d.event_id, file_name: d.file_name ?? "", description: d.description ?? "" }));
-
-  return { spName, appeals, proceedings, events, proceedingDocuments, eventDocuments, generatedAt: new Date().toISOString() };
 }

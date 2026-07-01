@@ -26,7 +26,7 @@ export default async function ClientsPage({
 
   const { data: clients } = await supabase
     .from("organizations")
-    .select("id, name, business_type, city, is_active, created_at, date_of_incorporation, compliance_details(type, number)")
+    .select("id, name, business_type, city, is_active, created_at")
     .eq("parent_sp_id", spId!)
     .eq("type", "client")
     .is("deleted_at", null)
@@ -38,14 +38,13 @@ export default async function ClientsPage({
       style={{ background: "linear-gradient(to right, #363636 0%, #ffffff 50%)" }}
     >
       <ClientsClient
-        clients={(clients ?? []) as any}
+        clients={clients ?? []}
         isAdmin={user?.role === "sp_admin"}
         currentClientIds={currentClientIds}
         currentBtypes={currentBtypes}
         currentCities={currentCities}
         currentStatuses={currentStatuses}
         currentSortDir={currentSortDir}
-        userId={user?.id ?? ""}
       />
     </div>
   );
