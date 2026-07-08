@@ -47,8 +47,6 @@ body:
         - label: "File Uploads / Storage"
         - label: "Email Notifications"
         - label: "Other"
-    validations:
-      required: true
 
   - type: textarea
     id: expected

@@ -53,8 +53,6 @@ body:
         - label: "Email Notifications"
         - label: "DevOps / Config / Deployment"
         - label: "Other"
-    validations:
-      required: true
 
   - type: dropdown
     id: priority
