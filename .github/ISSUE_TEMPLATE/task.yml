@@ -69,5 +69,3 @@ body:
     id: additional
     attributes:
       label: Additional context
-    validations:
-      required: false
