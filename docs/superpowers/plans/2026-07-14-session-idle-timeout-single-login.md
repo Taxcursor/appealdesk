@@ -180,9 +180,14 @@ export default function SessionGuard() {
 
   // Activity listeners reset the idle clock. Passive + cheap (ref write, no
   // re-render) so mousemove/scroll don't cause perf issues. Also seeds
-  // lastActivityRef with a real timestamp on mount (see comment above).
+  // lastActivityRef with a real timestamp on mount (see comment above) — a
+  // direct ref write here, NOT a call to resetActivity(), since calling a
+  // setState-invoking function synchronously in an effect body trips this
+  // repo's react-hooks/set-state-in-effect rule. secondsLeft is already
+  // null from its initial useState value, so there's nothing to setState
+  // on first mount anyway.
   useEffect(() => {
-    resetActivity();
+    lastActivityRef.current = Date.now();
     ACTIVITY_EVENTS.forEach((evt) =>
       window.addEventListener(evt, resetActivity, { passive: true }),
     );
