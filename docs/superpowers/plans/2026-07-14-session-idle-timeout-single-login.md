@@ -147,7 +147,12 @@ const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"
 
 export default function SessionGuard() {
   const router = useRouter();
-  const lastActivityRef = useRef(Date.now());
+  // Seeded with 0 (a pure literal) rather than Date.now() — calling an impure
+  // function directly in a useRef initializer during render trips this repo's
+  // react-hooks/purity lint rule. The real timestamp is set in the effect
+  // below via resetActivity(), which runs after mount, before the idle-check
+  // interval's first tick.
+  const lastActivityRef = useRef(0);
   const hasLoggedOutRef = useRef(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
@@ -174,8 +179,10 @@ export default function SessionGuard() {
   );
 
   // Activity listeners reset the idle clock. Passive + cheap (ref write, no
-  // re-render) so mousemove/scroll don't cause perf issues.
+  // re-render) so mousemove/scroll don't cause perf issues. Also seeds
+  // lastActivityRef with a real timestamp on mount (see comment above).
   useEffect(() => {
+    resetActivity();
     ACTIVITY_EVENTS.forEach((evt) =>
       window.addEventListener(evt, resetActivity, { passive: true }),
     );
