@@ -300,12 +300,15 @@ export interface DemandIssue {
   tax_demanded: number;
   tax_acceptable: number;
   tax_dropped: number;
+  tax_remarks: string | null;
   interest_demanded: number;
   interest_acceptable: number;
   interest_dropped: number;
+  interest_remarks: string | null;
   penalty_demanded: number;
   penalty_acceptable: number;
   penalty_dropped: number;
+  penalty_remarks: string | null;
   sort_order: number;
   created_at: string;
 }

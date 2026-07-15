@@ -171,12 +171,15 @@ interface DraftDemandIssue {
   tax_demanded: string;
   tax_acceptable: string;
   tax_dropped: string;
+  tax_remarks: string;
   interest_demanded: string;
   interest_acceptable: string;
   interest_dropped: string;
+  interest_remarks: string;
   penalty_demanded: string;
   penalty_acceptable: string;
   penalty_dropped: string;
+  penalty_remarks: string;
 }
 type DemandTypeKey = "tax" | "interest" | "penalty";
 const DEMAND_TYPES: { key: DemandTypeKey; label: string }[] = [
@@ -192,12 +195,15 @@ function blankDraftIssue(): DraftDemandIssue {
     tax_demanded: "0",
     tax_acceptable: "0",
     tax_dropped: "0",
+    tax_remarks: "",
     interest_demanded: "0",
     interest_acceptable: "0",
     interest_dropped: "0",
+    interest_remarks: "",
     penalty_demanded: "0",
     penalty_acceptable: "0",
     penalty_dropped: "0",
+    penalty_remarks: "",
   };
 }
 function toDraftIssue(iss: DemandIssue): DraftDemandIssue {
@@ -208,12 +214,15 @@ function toDraftIssue(iss: DemandIssue): DraftDemandIssue {
     tax_demanded: iss.tax_demanded.toString(),
     tax_acceptable: iss.tax_acceptable.toString(),
     tax_dropped: (iss.tax_dropped ?? 0).toString(),
+    tax_remarks: iss.tax_remarks ?? "",
     interest_demanded: iss.interest_demanded.toString(),
     interest_acceptable: iss.interest_acceptable.toString(),
     interest_dropped: (iss.interest_dropped ?? 0).toString(),
+    interest_remarks: iss.interest_remarks ?? "",
     penalty_demanded: iss.penalty_demanded.toString(),
     penalty_acceptable: iss.penalty_acceptable.toString(),
     penalty_dropped: (iss.penalty_dropped ?? 0).toString(),
+    penalty_remarks: iss.penalty_remarks ?? "",
   };
 }
 function fromDraftIssue(
@@ -227,12 +236,15 @@ function fromDraftIssue(
     tax_demanded: parseFloat(draft.tax_demanded) || 0,
     tax_acceptable: parseFloat(draft.tax_acceptable) || 0,
     tax_dropped: parseFloat(draft.tax_dropped) || 0,
+    tax_remarks: draft.tax_remarks || null,
     interest_demanded: parseFloat(draft.interest_demanded) || 0,
     interest_acceptable: parseFloat(draft.interest_acceptable) || 0,
     interest_dropped: parseFloat(draft.interest_dropped) || 0,
+    interest_remarks: draft.interest_remarks || null,
     penalty_demanded: parseFloat(draft.penalty_demanded) || 0,
     penalty_acceptable: parseFloat(draft.penalty_acceptable) || 0,
     penalty_dropped: parseFloat(draft.penalty_dropped) || 0,
+    penalty_remarks: draft.penalty_remarks || null,
     sort_order: sortOrder,
   };
 }
@@ -282,6 +294,20 @@ function setDraftAmount(
     : field === "acceptable"
       ? { ...iss, penalty_acceptable: val }
       : { ...iss, penalty_dropped: val };
+}
+function getDraftRemarks(iss: DraftDemandIssue, key: DemandTypeKey): string {
+  if (key === "tax") return iss.tax_remarks;
+  if (key === "interest") return iss.interest_remarks;
+  return iss.penalty_remarks;
+}
+function setDraftRemarks(
+  iss: DraftDemandIssue,
+  key: DemandTypeKey,
+  val: string,
+): DraftDemandIssue {
+  if (key === "tax") return { ...iss, tax_remarks: val };
+  if (key === "interest") return { ...iss, interest_remarks: val };
+  return { ...iss, penalty_remarks: val };
 }
 function fmtInr(n: number): string {
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -1826,6 +1852,30 @@ function DemandIssuesEditor({
     },
     { demanded: 0, acceptable: 0, dropped: 0 },
   );
+
+  const byType = DEMAND_TYPES.reduce(
+    (acc, t) => {
+      acc[t.key] = issues.reduce(
+        (a, iss) => {
+          const demanded = parseFloat(getDraftAmount(iss, t.key, "demanded")) || 0;
+          const dropped = parseFloat(getDraftAmount(iss, t.key, "dropped")) || 0;
+          const acceptable = parseFloat(getDraftAmount(iss, t.key, "acceptable")) || 0;
+          a.demanded += demanded;
+          a.dropped += dropped;
+          a.acceptable += acceptable;
+          a.disputed += demanded - dropped - acceptable;
+          return a;
+        },
+        { demanded: 0, dropped: 0, acceptable: 0, disputed: 0 },
+      );
+      return acc;
+    },
+    {} as Record<
+      DemandTypeKey,
+      { demanded: number; dropped: number; acceptable: number; disputed: number }
+    >,
+  );
+
   if (isEditMode && activeMainEvents.length === 0) {
     return (
       <div className="py-10 flex flex-col items-center gap-2 text-center">
@@ -1852,26 +1902,67 @@ function DemandIssuesEditor({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: "Total Amount Demanded", value: totals.demanded },
-          { label: "Total Amount Dropped", value: totals.dropped },
-          { label: "Total Amount Acceptable", value: totals.acceptable },
-          {
-            label: "Total Amount Disputed",
-            value: totals.demanded - totals.acceptable - totals.dropped,
-          },
-        ].map(({ label, value }) => (
-          <div
-            key={label}
-            className="bg-accent-tint border border-border rounded-lg px-3 py-2.5"
-          >
-            <p className="text-xs text-muted mb-0.5">{label}</p>
-            <p className="text-sm font-semibold text-heading">
-              ₹{fmtInr(value)}
-            </p>
-          </div>
-        ))}
+      <div>
+        <p className="text-xs font-semibold text-heading mb-1.5">
+          Grand Total Breakup
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-table-header text-left">
+                <th className="px-3 py-2 font-semibold text-heading">
+                  Particulars
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-info/10">
+                  Demanded (₹)
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-warning/10">
+                  Dropped (₹)
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-success/10">
+                  Acceptable (₹)
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-danger/10">
+                  Disputed (₹)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {DEMAND_TYPES.map((type) => (
+                <tr key={type.key} className="border-t border-border">
+                  <td className="px-3 py-1.5 text-secondary">{type.label}</td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-info/10">
+                    {fmtInr(byType[type.key].demanded)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-warning/10">
+                    {fmtInr(byType[type.key].dropped)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-success/10">
+                    {fmtInr(byType[type.key].acceptable)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-danger/10">
+                    {fmtInr(byType[type.key].disputed)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-border-strong bg-accent-tint">
+                <td className="px-3 py-1.5 font-bold text-heading">Total</td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.demanded)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.dropped)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.acceptable)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.demanded - totals.acceptable - totals.dropped)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       {issues.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -1882,11 +1973,8 @@ function DemandIssuesEditor({
             <thead>
               <tr className="bg-table-header text-left">
                 <th className="px-2 py-2 font-semibold text-heading w-8">#</th>
-                <th className="px-2 py-2 font-semibold text-heading w-[130px]">
-                  Notice No & Date
-                </th>
-                <th className="px-2 py-2 font-semibold text-heading min-w-[220px] ">
-                  Description of the Issue
+                <th className="px-2 py-2 font-semibold text-heading min-w-[260px]">
+                  Notice No & Date / Description of the Issue
                 </th>
                 <th className="px-2 py-2 font-semibold text-heading w-[110px]">
                   Type
@@ -1915,7 +2003,12 @@ function DemandIssuesEditor({
                 >
                   Disputed (₹)
                 </th>
-                <th className="w-7"></th>
+                <th className="px-2 py-2 font-semibold text-heading min-w-[140px]">
+                  Remarks
+                </th>
+                <th className="px-2 py-2 font-semibold text-heading w-14 text-center">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1969,72 +2062,70 @@ function DemandIssuesEditor({
                               >
                                 {i + 1}
                               </td>
-                              <td rowSpan={3} className="relative">
-                                <div className="absolute inset-0 flex flex-col justify-start gap-6 px-2 py-1.5">
-                                  {isEditMode ? (
-                                    <select
-                                      value={iss.notice_no}
-                                      onChange={(e) =>
-                                        onChange(
-                                          issues.map((x, idx) =>
-                                            idx === i
-                                              ? {
-                                                  ...x,
-                                                  notice_no: e.target.value,
-                                                }
-                                              : x,
-                                          ),
-                                        )
-                                      }
-                                      className={cInpTall}
-                                    >
-                                      <option value="">— Select ME —</option>
-                                      {meOptions.map((opt) => (
-                                        <option key={opt.id} value={opt.label}>
-                                          {opt.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
+                              <td rowSpan={3} className="align-top px-2 py-1.5">
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="flex gap-1.5">
+                                    {isEditMode ? (
+                                      <select
+                                        value={iss.notice_no}
+                                        onChange={(e) =>
+                                          onChange(
+                                            issues.map((x, idx) =>
+                                              idx === i
+                                                ? {
+                                                    ...x,
+                                                    notice_no: e.target.value,
+                                                  }
+                                                : x,
+                                            ),
+                                          )
+                                        }
+                                        className={cInpTall}
+                                      >
+                                        <option value="">— Select ME —</option>
+                                        {meOptions.map((opt) => (
+                                          <option key={opt.id} value={opt.label}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        value={iss.notice_no}
+                                        onChange={(e) =>
+                                          onChange(
+                                            issues.map((x, idx) =>
+                                              idx === i
+                                                ? {
+                                                    ...x,
+                                                    notice_no: e.target.value,
+                                                  }
+                                                : x,
+                                            ),
+                                          )
+                                        }
+                                        className={cInpTall}
+                                        placeholder="Notice No."
+                                      />
+                                    )}
                                     <input
-                                      value={iss.notice_no}
+                                      type="date"
+                                      value={iss.notice_date}
                                       onChange={(e) =>
                                         onChange(
                                           issues.map((x, idx) =>
                                             idx === i
                                               ? {
                                                   ...x,
-                                                  notice_no: e.target.value,
+                                                  notice_date: e.target.value,
                                                 }
                                               : x,
                                           ),
                                         )
                                       }
                                       className={cInpTall}
-                                      placeholder="Notice No."
                                     />
-                                  )}
-                                  <input
-                                    type="date"
-                                    value={iss.notice_date}
-                                    onChange={(e) =>
-                                      onChange(
-                                        issues.map((x, idx) =>
-                                          idx === i
-                                            ? {
-                                                ...x,
-                                                notice_date: e.target.value,
-                                              }
-                                            : x,
-                                        ),
-                                      )
-                                    }
-                                    className={cInpTall}
-                                  />
-                                </div>
-                              </td>
-                              <td rowSpan={3} className="relative">
-                                <div className="absolute inset-0 px-2 py-1.5">
+                                  </div>
                                   <textarea
                                     value={iss.description}
                                     onChange={(e) =>
@@ -2049,7 +2140,8 @@ function DemandIssuesEditor({
                                         ),
                                       )
                                     }
-                                    className={`${cInp} resize-none w-full h-full`}
+                                    rows={2}
+                                    className={`${cInp} resize-none w-full`}
                                     placeholder="Description…"
                                   />
                                 </div>
@@ -2157,16 +2249,34 @@ function DemandIssuesEditor({
                               {fmtInr(disputed)}
                             </div>
                           </td>
-                          {ti === 0 && (
-                            <td
-                              rowSpan={3}
-                              className="px-2 py-1.5 align-top text-center"
-                            >
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            <input
+                              type="text"
+                              value={getDraftRemarks(iss, type.key)}
+                              onChange={(e) =>
+                                onChange(
+                                  issues.map((x, idx) =>
+                                    idx === i
+                                      ? setDraftRemarks(
+                                          x,
+                                          type.key,
+                                          e.target.value,
+                                        )
+                                      : x,
+                                  ),
+                                )
+                              }
+                              className={cInp}
+                              placeholder="Remarks…"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-center align-middle">
+                            {ti === 0 && (
                               <button
                                 type="button"
                                 onClick={() => setDeleteConfirmIdx(i)}
-                                title="Remove"
-                                className="text-red-400 hover:text-red-600 p-0.5 rounded transition-colors"
+                                title="Remove issue"
+                                className="p-1.5 rounded hover:bg-surface-hover transition-colors text-red-400 hover:text-red-600 inline-flex"
                               >
                                 <svg
                                   className="w-3.5 h-3.5"
@@ -2182,14 +2292,41 @@ function DemandIssuesEditor({
                                   />
                                 </svg>
                               </button>
-                            </td>
-                          )}
+                            )}
+                            {ti === 1 && (
+                              <span className="text-muted">–</span>
+                            )}
+                            {ti === 2 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onChange([...issues, blankDraftIssue()])
+                                }
+                                title="Add issue"
+                                className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-success text-success hover:bg-success/10 transition-colors"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M12 4v16m8-8H4"
+                                  />
+                                </svg>
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
                     <tr className="border-t border-border bg-surface-hover">
                       <td
-                        colSpan={4}
+                        colSpan={3}
                         className="px-2 py-1 text-right font-semibold text-heading"
                       >
                         Total
@@ -2211,6 +2348,7 @@ function DemandIssuesEditor({
                         )}
                       </td>
                       <td></td>
+                      <td></td>
                     </tr>
                   </React.Fragment>
                 );
@@ -2220,7 +2358,7 @@ function DemandIssuesEditor({
               <tfoot>
                 <tr className="border-t-2 border-border-strong bg-accent-tint">
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="px-2 py-1.5 text-right font-bold text-heading"
                   >
                     Grand Total
@@ -2238,6 +2376,7 @@ function DemandIssuesEditor({
                     {fmtInr(totals.demanded - totals.acceptable - totals.dropped)}
                   </td>
                   <td></td>
+                  <td></td>
                 </tr>
               </tfoot>
             )}
@@ -2245,30 +2384,30 @@ function DemandIssuesEditor({
         </div>
       )}
       {issues.length === 0 && (
-        <p className="text-center text-xs text-muted py-6">
-          No demand issues yet.
-        </p>
+        <div className="text-center py-6">
+          <p className="text-xs text-muted mb-2">No demand issues yet.</p>
+          <button
+            type="button"
+            onClick={() => onChange([...issues, blankDraftIssue()])}
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition"
+          >
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            Add Issue
+          </button>
+        </div>
       )}
-      <button
-        type="button"
-        onClick={() => onChange([...issues, blankDraftIssue()])}
-        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition"
-      >
-        <svg
-          className="w-3.5 h-3.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        Add Issue
-      </button>
 
       {deleteConfirmIdx !== null && (
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-10 rounded-xl">
@@ -2322,43 +2461,117 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
     },
     { demanded: 0, acceptable: 0, dropped: 0 },
   );
+
+  const byType: Record<
+    DemandTypeKey,
+    { demanded: number; dropped: number; acceptable: number; disputed: number }
+  > = {
+    tax: { demanded: 0, dropped: 0, acceptable: 0, disputed: 0 },
+    interest: { demanded: 0, dropped: 0, acceptable: 0, disputed: 0 },
+    penalty: { demanded: 0, dropped: 0, acceptable: 0, disputed: 0 },
+  };
+  const addToByType = (
+    key: DemandTypeKey,
+    demanded: number,
+    dropped: number,
+    acceptable: number,
+  ) => {
+    byType[key].demanded += demanded;
+    byType[key].dropped += dropped;
+    byType[key].acceptable += acceptable;
+    byType[key].disputed += demanded - dropped - acceptable;
+  };
+  for (const iss of issues) {
+    addToByType("tax", iss.tax_demanded, iss.tax_dropped ?? 0, iss.tax_acceptable);
+    addToByType(
+      "interest",
+      iss.interest_demanded,
+      iss.interest_dropped ?? 0,
+      iss.interest_acceptable,
+    );
+    addToByType(
+      "penalty",
+      iss.penalty_demanded,
+      iss.penalty_dropped ?? 0,
+      iss.penalty_acceptable,
+    );
+  }
+
   if (issues.length === 0)
     return (
       <p className="text-xs text-muted py-2">No demand amounts recorded.</p>
     );
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: "Total Amount Demanded", value: totals.demanded },
-          { label: "Total Amount Dropped", value: totals.dropped },
-          { label: "Total Amount Acceptable", value: totals.acceptable },
-          {
-            label: "Total Amount Disputed",
-            value: totals.demanded - totals.acceptable - totals.dropped,
-          },
-        ].map(({ label, value }) => (
-          <div
-            key={label}
-            className="bg-white border border-border rounded-lg px-3 py-2.5"
-          >
-            <p className="text-xs text-muted mb-0.5">{label}</p>
-            <p className="text-sm font-semibold text-heading">
-              ₹{fmtInr(value)}
-            </p>
-          </div>
-        ))}
+      <div>
+        <p className="text-xs font-semibold text-heading mb-1.5">
+          Grand Total Breakup
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-table-header text-left">
+                <th className="px-3 py-2 font-semibold text-heading">
+                  Particulars
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-info/10">
+                  Demanded (₹)
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-warning/10">
+                  Dropped (₹)
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-success/10">
+                  Acceptable (₹)
+                </th>
+                <th className="px-3 py-2 font-semibold text-heading text-right bg-danger/10">
+                  Disputed (₹)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {DEMAND_TYPES.map((type) => (
+                <tr key={type.key} className="border-t border-border">
+                  <td className="px-3 py-1.5 text-secondary">{type.label}</td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-info/10">
+                    {fmtInr(byType[type.key].demanded)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-warning/10">
+                    {fmtInr(byType[type.key].dropped)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-success/10">
+                    {fmtInr(byType[type.key].acceptable)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-secondary bg-danger/10">
+                    {fmtInr(byType[type.key].disputed)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-border-strong bg-accent-tint">
+                <td className="px-3 py-1.5 font-bold text-heading">Total</td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.demanded)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.dropped)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.acceptable)}
+                </td>
+                <td className="px-3 py-1.5 text-right font-bold text-heading">
+                  {fmtInr(totals.demanded - totals.acceptable - totals.dropped)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr className="bg-table-header text-left">
               <th className="px-2 py-2 font-semibold text-heading w-8">#</th>
-              <th className="px-2 py-2 font-semibold text-heading w-[130px]">
-                Notice No / Date
-              </th>
-              <th className="px-2 py-2 font-semibold text-heading min-w-[220px]">
-                Description of the Issue
+              <th className="px-2 py-2 font-semibold text-heading min-w-[260px]">
+                Notice No & Date / Description of the Issue
               </th>
               <th className="px-2 py-2 font-semibold text-heading">Type</th>
               <th className="px-2 py-2 font-semibold text-heading text-right">
@@ -2373,6 +2586,9 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
               <th className="px-2 py-2 font-semibold text-heading text-right">
                 Disputed (₹)
               </th>
+              <th className="px-2 py-2 font-semibold text-heading min-w-[140px]">
+                Remarks
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -2383,18 +2599,21 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
                   demanded: iss.tax_demanded,
                   acceptable: iss.tax_acceptable,
                   dropped: iss.tax_dropped ?? 0,
+                  remarks: iss.tax_remarks ?? "",
                 },
                 {
                   label: "Interest demand",
                   demanded: iss.interest_demanded,
                   acceptable: iss.interest_acceptable,
                   dropped: iss.interest_dropped ?? 0,
+                  remarks: iss.interest_remarks ?? "",
                 },
                 {
                   label: "Penalty demand",
                   demanded: iss.penalty_demanded,
                   acceptable: iss.penalty_acceptable,
                   dropped: iss.penalty_dropped ?? 0,
+                  remarks: iss.penalty_remarks ?? "",
                 },
               ];
               const issueTotals = rows.reduce(
@@ -2421,22 +2640,19 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
                             rowSpan={3}
                             className="px-2 py-1.5 align-top text-secondary"
                           >
-                            <div className="flex flex-col gap-0.5">
-                              <span>{iss.notice_no || "—"}</span>
-                              <span className="text-muted text-xs">
-                                {iss.notice_date
-                                  ? new Date(
-                                      iss.notice_date,
-                                    ).toLocaleDateString("en-IN")
-                                  : "—"}
-                              </span>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex flex-col gap-0.5">
+                                <span>{iss.notice_no || "—"}</span>
+                                <span className="text-muted text-xs">
+                                  {iss.notice_date
+                                    ? new Date(
+                                        iss.notice_date,
+                                      ).toLocaleDateString("en-IN")
+                                    : "—"}
+                                </span>
+                              </div>
+                              <span>{iss.description || "—"}</span>
                             </div>
-                          </td>
-                          <td
-                            rowSpan={3}
-                            className="px-2 py-1.5 align-top text-secondary"
-                          >
-                            {iss.description || "—"}
                           </td>
                         </>
                       )}
@@ -2455,11 +2671,14 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
                       <td className="px-2 py-1.5 text-right text-secondary">
                         {fmtInr(row.demanded - row.acceptable - row.dropped)}
                       </td>
+                      <td className="px-2 py-1.5 text-secondary">
+                        {row.remarks || "—"}
+                      </td>
                     </tr>
                   ))}
                   <tr className="border-t border-border bg-surface-hover">
                     <td
-                      colSpan={4}
+                      colSpan={3}
                       className="px-2 py-1 text-right font-semibold text-heading"
                     >
                       Total
@@ -2480,6 +2699,7 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
                           issueTotals.dropped,
                       )}
                     </td>
+                    <td></td>
                   </tr>
                 </React.Fragment>
               );
@@ -2489,7 +2709,7 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
             <tfoot>
               <tr className="border-t-2 border-border-strong bg-accent-tint">
                 <td
-                  colSpan={4}
+                  colSpan={3}
                   className="px-2 py-1.5 text-right font-bold text-heading"
                 >
                   Grand Total
@@ -2506,6 +2726,7 @@ function DemandIssuesReadOnly({ issues }: { issues: DemandIssue[] }) {
                 <td className="px-2 py-1.5 text-right font-bold text-heading">
                   {fmtInr(totals.demanded - totals.acceptable - totals.dropped)}
                 </td>
+                <td></td>
               </tr>
             </tfoot>
           )}
