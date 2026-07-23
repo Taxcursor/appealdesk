@@ -9,7 +9,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   const { id } = await params;
 
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "sp_admin") redirect("/users");
+  if (!currentUser || !["sp_admin", "director"].includes(currentUser.role)) redirect("/users");
 
   const supabase = await createClient();
 

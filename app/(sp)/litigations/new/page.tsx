@@ -10,7 +10,7 @@ export default async function NewAppealPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const user = await getCurrentUser();
-  if (!user || !["sp_admin", "sp_staff"].includes(user.role)) redirect("/litigations");
+  if (!user || !["sp_admin", "sp_staff", "director"].includes(user.role)) redirect("/litigations");
 
   const params = await searchParams;
   const defaultClientId = typeof params.client === "string" ? params.client : undefined;
@@ -18,7 +18,7 @@ export default async function NewAppealPage({
   const supabase = await createClient();
   const spId = user.service_provider_id ?? user.org_id;
 
-  const [{ data: clients }, { data: teamMembers }, { data: masters }] = await Promise.all([
+  const [{ data: clients }, { data: teamMembers }, { data: guestUsers }, { data: masters }] = await Promise.all([
     supabase
       .from("organizations")
       .select("id, name")
@@ -31,7 +31,13 @@ export default async function NewAppealPage({
       .select("id, first_name, last_name")
       .eq("org_id", spId!)
       .eq("is_active", true)
-      .in("role", ["sp_admin", "sp_staff"]),
+      .in("role", ["sp_admin", "sp_staff", "director"]),
+    supabase
+      .from("users")
+      .select("id, first_name, last_name, role")
+      .eq("org_id", spId!)
+      .eq("is_active", true)
+      .in("role", ["guest_manager", "guest_user"]),
     supabase
       .from("master_records")
       .select("id, name, type, parent_id")
@@ -80,6 +86,7 @@ export default async function NewAppealPage({
         teamMembers={teamMembers ?? []}
         mastersByType={mastersByType}
         clientUsersByOrg={clientUsersByOrg}
+        guestUsers={guestUsers ?? []}
         defaultClientId={defaultClientId}
       />
     </div>

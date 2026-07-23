@@ -67,7 +67,7 @@ export default async function ClientsPage({
     >
       <ClientsClient
         clients={(clients ?? []) as unknown as ClientRow[]}
-        isAdmin={user?.role === "sp_admin"}
+        isAdmin={user?.role === "sp_admin" || user?.role === "director"}
         currentClientIds={currentClientIds}
         currentBtypes={currentBtypes}
         currentCities={currentCities}

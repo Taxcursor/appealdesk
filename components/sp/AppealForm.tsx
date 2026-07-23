@@ -43,6 +43,7 @@ interface Props {
   teamMembers: { id: string; first_name: string; last_name: string }[];
   mastersByType: Record<string, MasterItem[]>;
   clientUsersByOrg: Record<string, { id: string; first_name: string; last_name: string }[]>;
+  guestUsers: { id: string; first_name: string; last_name: string; role: string }[];
   defaultClientId?: string;
 }
 
@@ -113,7 +114,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-export default function AppealForm({ clients, teamMembers, mastersByType, clientUsersByOrg, defaultClientId }: Props) {
+export default function AppealForm({ clients, teamMembers, mastersByType, clientUsersByOrg, guestUsers, defaultClientId }: Props) {
   const router = useRouter();
 
   // All master-linked fields store UUIDs (master_records.id)
@@ -135,6 +136,7 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
   const [toBeCompletedBy, setToBeCompletedBy] = useState("");
   const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
   const [clientStaffIds, setClientStaffIds] = useState<string[]>([]);
+  const [guestIds, setGuestIds] = useState<string[]>([]);
   const [possibleOutcome, setPossibleOutcome] = useState("");
   const [proceedingStatus, setProceedingStatus] = useState("open");
 
@@ -215,6 +217,7 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
         to_be_completed_by: toBeCompletedBy,
         assigned_to_ids: assignedToIds,
         client_staff_ids: clientStaffIds,
+        guest_ids: guestIds,
         possible_outcome: possibleOutcome,
         status: proceedingStatus,
       };
@@ -364,6 +367,14 @@ export default function AppealForm({ clients, teamMembers, mastersByType, client
               onChange={setClientStaffIds}
               placeholder={clientOrgId ? "None" : "Select client first"}
               disabled={!clientOrgId}
+            />
+          </Field>
+          <Field label="Guest User">
+            <MultiSelect
+              options={[...guestUsers].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`)).map(u => ({ value: u.id, label: `${u.first_name} ${u.last_name} (${u.role === "guest_manager" ? "Guest Manager" : "Guest User"})` }))}
+              selected={guestIds}
+              onChange={setGuestIds}
+              placeholder="No guest access"
             />
           </Field>
           <Field label="Possible Outcome">

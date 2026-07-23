@@ -6,7 +6,8 @@ export default async function SpMastersPage() {
   const user = await getCurrentUser();
   const supabase = await createClient();
 
-  // Fetch only platform-level records (SP cannot add custom records)
+  // Fetch only platform-level records — SP-level custom master records are
+  // not a supported feature; all master data is platform-managed.
   const { data: records } = await supabase
     .from("master_records")
     .select("id, name, type, parent_id, is_active, sort_order")
@@ -25,7 +26,7 @@ export default async function SpMastersPage() {
       </div>
       <SpMastersClient
         records={records ?? []}
-        isAdmin={user?.role === "sp_admin"}
+        isAdmin={user?.role === "sp_admin" || user?.role === "director"}
       />
     </div>
   );

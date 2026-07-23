@@ -148,7 +148,7 @@ export default function EditSpUserForm({ user }: Props) {
     first_name: user.first_name,
     middle_name: user.middle_name ?? "",
     last_name: user.last_name,
-    role: user.role as "sp_admin" | "sp_staff",
+    role: user.role as "sp_admin" | "sp_staff" | "director" | "guest_manager" | "guest_user",
     mobile_country_code: user.mobile_country_code ?? "+91",
     mobile_number: user.mobile_number ?? "",
     date_of_birth: user.date_of_birth ?? "",
@@ -253,6 +253,9 @@ export default function EditSpUserForm({ user }: Props) {
             <select value={form.role} onChange={(e) => set("role")(e.target.value as UserEditInput["role"])} className={inp}>
               <option value="sp_admin">Admin</option>
               <option value="sp_staff">Staff</option>
+              <option value="director">Director</option>
+              <option value="guest_manager">Guest Manager</option>
+              <option value="guest_user">Guest User</option>
             </select>
           </Field>
 

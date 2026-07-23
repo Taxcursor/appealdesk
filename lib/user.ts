@@ -23,7 +23,13 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 
   // Derive service_provider_id based on role
   let service_provider_id: string | null = null;
-  if (profile.role === "sp_admin" || profile.role === "sp_staff") {
+  if (
+    profile.role === "sp_admin" ||
+    profile.role === "sp_staff" ||
+    profile.role === "director" ||
+    profile.role === "guest_manager" ||
+    profile.role === "guest_user"
+  ) {
     service_provider_id = profile.org_id;
   } else if (profile.role === "client") {
     service_provider_id = org?.parent_sp_id ?? null;

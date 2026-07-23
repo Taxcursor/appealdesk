@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { logAction } from "@/lib/audit";
 
 function spOnly(role: string) {
-  if (!["sp_admin", "sp_staff"].includes(role)) throw new Error("Unauthorized");
+  if (!["sp_admin", "sp_staff", "director"].includes(role)) throw new Error("Unauthorized");
 }
 
 export async function addDocument(appealId: string, fileName: string, fileUrl: string, fileSize: number): Promise<void> {

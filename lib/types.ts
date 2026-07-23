@@ -5,6 +5,9 @@ export type UserRole =
   | "platform_admin"
   | "sp_admin"
   | "sp_staff"
+  | "director"
+  | "guest_manager"
+  | "guest_user"
   | "client";
 
 export type OrgType = "platform" | "service_provider" | "client";

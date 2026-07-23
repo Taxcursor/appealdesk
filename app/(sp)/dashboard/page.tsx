@@ -83,6 +83,7 @@ function extractDate(val: string | null | undefined): string | null {
 export default async function DashboardPage() {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
+  if (user.role === 'guest_manager' || user.role === 'guest_user') redirect('/proceedings')
   if (!user.service_provider_id) redirect('/platform/dashboard')
 
   const supabase = await createClient()

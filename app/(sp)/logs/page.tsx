@@ -17,7 +17,7 @@ export default async function LogsPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const user = await getCurrentUser();
-  if (user?.role !== "sp_admin") redirect("/dashboard");
+  if (!user || !["sp_admin", "director"].includes(user.role)) redirect("/dashboard");
 
   const params = await searchParams;
   const supabase = await createClient();

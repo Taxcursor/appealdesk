@@ -66,10 +66,20 @@ interface Props {
   currentSortDir: string;
 }
 
-const ROLE_LABELS: Record<string, string> = { sp_admin: "Admin", sp_staff: "Staff", client: "Client" };
+const ROLE_LABELS: Record<string, string> = {
+  sp_admin: "Admin",
+  sp_staff: "Staff",
+  director: "Director",
+  guest_manager: "Guest Manager",
+  guest_user: "Guest User",
+  client: "Client",
+};
 const ROLE_COLORS: Record<string, string> = {
   sp_admin: "bg-purple-50 text-purple-700",
   sp_staff: "bg-blue-50 text-blue-700",
+  director: "bg-indigo-50 text-indigo-700",
+  guest_manager: "bg-teal-50 text-teal-700",
+  guest_user: "bg-gray-100 text-gray-600",
   client:   "bg-orange-50 text-orange-700",
 };
 
@@ -279,7 +289,9 @@ export default function UsersClient({
     return () => document.removeEventListener("mousedown", handler);
   }, [colMenuOpen]);
 
-  const teamUsers   = users.filter((u) => u.role === "sp_admin" || u.role === "sp_staff");
+  const teamUsers   = users.filter((u) =>
+    ["sp_admin", "sp_staff", "director", "guest_manager", "guest_user"].includes(u.role)
+  );
   const clientUsers = users.filter((u) => u.role === "client");
   const tabUsers    = currentTab === "team" ? teamUsers : clientUsers;
 

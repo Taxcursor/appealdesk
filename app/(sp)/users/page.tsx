@@ -25,7 +25,7 @@ export default async function UsersPage({
   const currentStatuses    = parseMulti(params.status);
   const currentSortDir     = (params.sort_dir as string) === "desc" ? "desc" : "asc";
 
-  const isAdmin = user?.role === "sp_admin";
+  const isAdmin = user?.role === "sp_admin" || user?.role === "director";
 
   // Fetch client org IDs under this SP
   const { data: clientOrgIds } = await supabase

@@ -29,6 +29,7 @@ const ENTITY_LABELS: Record<string, string> = {
   proceeding: "Proceeding",
   event: "Event",
   document: "Document",
+  master_record: "Master Record",
 };
 
 function fmtDateTime(d: string) {

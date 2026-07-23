@@ -5,6 +5,12 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/user";
 import { revalidatePath } from "next/cache";
 import { logAction } from "@/lib/audit";
+import {
+  assertCanWriteProceeding,
+  proceedingIdForEvent,
+  proceedingIdForProceedingDoc,
+  proceedingIdForEventDoc,
+} from "@/lib/guestProceedingAuth";
 
 export interface AppealInput {
   client_org_id: string;
@@ -63,6 +69,7 @@ export interface ProceedingInput {
   to_be_completed_by?: string;
   assigned_to_ids?: string[];
   client_staff_ids?: string[];
+  guest_ids?: string[];
   possible_outcome?: string;
   status?: string;
   gst_number?: string;
@@ -82,7 +89,7 @@ export interface EventInput {
 }
 
 function spOnly(role: string) {
-  if (!["sp_admin", "sp_staff"].includes(role)) throw new Error("Unauthorized");
+  if (!["sp_admin", "sp_staff", "director"].includes(role)) throw new Error("Unauthorized");
 }
 
 function cleanProceeding(proc: ProceedingInput) {
@@ -100,6 +107,7 @@ function cleanProceeding(proc: ProceedingInput) {
     client_staff_id: proc.client_staff_ids?.[0] || null,
     assigned_to_ids: proc.assigned_to_ids ?? [],
     client_staff_ids: proc.client_staff_ids ?? [],
+    guest_ids: proc.guest_ids ?? [],
     possible_outcome: (proc.possible_outcome as "favourable" | "doubtful" | "unfavourable") || null,
     status: proc.status || "open",
     gst_number: proc.gst_number || null,
@@ -205,8 +213,8 @@ export async function updateAppeal(appealId: string, appeal: AppealInput): Promi
 export async function updateProceeding(proceedingId: string, proc: ProceedingInput): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const supabase = await createServiceClient();
+  await assertCanWriteProceeding(supabase, user, proceedingId);
 
   const { error } = await supabase
     .from("proceedings")
@@ -245,8 +253,9 @@ export async function addProceeding(appealId: string, proc: ProceedingInput): Pr
 export async function updateEvent(eventId: string, input: EventInput): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const supabase = await createServiceClient();
+  const evtProceedingId = await proceedingIdForEvent(supabase, eventId);
+  await assertCanWriteProceeding(supabase, user, evtProceedingId ?? "");
 
   const PRIMARY_DATE: Record<string, string> = {
     notice_from_authority: "date_of_notice",
@@ -289,9 +298,9 @@ export async function updateEvent(eventId: string, input: EventInput): Promise<v
 export async function addEvent(input: EventInput): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  await assertCanWriteProceeding(supabase, user, input.proceeding_id);
 
   const { data, error } = await supabase.from("events").insert({
     proceeding_id: input.proceeding_id,
@@ -316,9 +325,9 @@ export async function addEvent(input: EventInput): Promise<string> {
 export async function deleteProceeding(proceedingId: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  await assertCanWriteProceeding(supabase, user, proceedingId);
 
   // Fetch label before cascade so we can record it in the log
   const { data: delProcRef } = await supabase.from("proceedings").select("appeal_id").eq("id", proceedingId).single();
@@ -348,9 +357,10 @@ export async function deleteProceeding(proceedingId: string): Promise<void> {
 export async function deleteEvent(eventId: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  const delEvtProceedingId = await proceedingIdForEvent(supabase, eventId);
+  await assertCanWriteProceeding(supabase, user, delEvtProceedingId ?? "");
 
   const { data: evtRef } = await supabase.from("events").select("category").eq("id", eventId).single();
   const evtLabel = evtRef?.category ? EVENT_CATEGORY_LABELS[evtRef.category] ?? evtRef.category : eventId;
@@ -426,9 +436,9 @@ export async function uploadProceedingDocument(
 ): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  await assertCanWriteProceeding(supabase, user, proceedingId);
 
   const { data, error } = await supabase.from("proceeding_documents").insert({
     proceeding_id: proceedingId,
@@ -449,9 +459,10 @@ export async function uploadProceedingDocument(
 export async function deleteProceedingDocument(docId: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  const docProceedingId = await proceedingIdForProceedingDoc(supabase, docId);
+  await assertCanWriteProceeding(supabase, user, docProceedingId ?? "");
 
   const { data: docRef } = await supabase.from("proceeding_documents").select("file_name").eq("id", docId).single();
 
@@ -476,9 +487,10 @@ export async function uploadEventDocument(
 ): Promise<string> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  const evtDocProceedingId = await proceedingIdForEvent(supabase, eventId);
+  await assertCanWriteProceeding(supabase, user, evtDocProceedingId ?? "");
 
   const { data, error } = await supabase.from("event_documents").insert({
     event_id: eventId,
@@ -499,9 +511,10 @@ export async function uploadEventDocument(
 export async function deleteEventDocument(docId: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
-  spOnly(user.role);
   const spId = user.service_provider_id ?? user.org_id;
   const supabase = await createServiceClient();
+  const evtDocProceedingId = await proceedingIdForEventDoc(supabase, docId);
+  await assertCanWriteProceeding(supabase, user, evtDocProceedingId ?? "");
 
   const { data: evtDocRef } = await supabase.from("event_documents").select("file_name").eq("id", docId).single();
 

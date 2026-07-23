@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ─── ENUMS ───────────────────────────────────────────────────
 CREATE TYPE org_type AS ENUM ('platform', 'service_provider', 'client');
-CREATE TYPE user_role AS ENUM ('super_admin', 'platform_admin', 'sp_admin', 'sp_staff', 'client');
+CREATE TYPE user_role AS ENUM ('super_admin', 'platform_admin', 'sp_admin', 'sp_staff', 'director', 'guest_manager', 'guest_user', 'client');
 CREATE TYPE business_type AS ENUM ('Company', 'Trust', 'Partnership', 'LLP', 'Sole Proprietorship', 'OPC', 'Custom');
 CREATE TYPE compliance_type AS ENUM ('pan', 'aadhaar', 'tan', 'gst');
 CREATE TYPE master_level AS ENUM ('platform', 'service_provider');
@@ -287,13 +287,19 @@ RETURNS uuid LANGUAGE sql SECURITY DEFINER STABLE AS $$
 $$;
 
 -- Returns current user's service_provider_id
--- For sp_admin/sp_staff: their own org_id
+-- For sp_admin/sp_staff/director: their own org_id
 -- For client: their org's parent_sp_id
--- For platform roles: NULL
+-- For platform roles AND guest_manager/guest_user: NULL — guests must NOT
+-- match the unconditional "service_provider_id = get_my_sp_id()" branch
+-- used throughout RLS below, or they'd get full SP-wide read access instead
+-- of being scoped to only their assigned proceeding(s). (The app-level
+-- SessionUser.service_provider_id in lib/user.ts is computed independently
+-- in JS and does resolve for guest roles — that's fine, every consumer of
+-- it falls back to `?? user.org_id` regardless.)
 CREATE OR REPLACE FUNCTION get_my_sp_id()
 RETURNS uuid LANGUAGE sql SECURITY DEFINER STABLE AS $$
   SELECT CASE
-    WHEN u.role IN ('sp_admin', 'sp_staff') THEN u.org_id
+    WHEN u.role IN ('sp_admin', 'sp_staff', 'director') THEN u.org_id
     WHEN u.role = 'client' THEN o.parent_sp_id
     ELSE NULL
   END
@@ -305,6 +311,36 @@ $$;
 GRANT EXECUTE ON FUNCTION get_my_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_my_org_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_my_sp_id() TO authenticated;
+
+-- Used by appeals_select's guest_manager/guest_user branch. Must be
+-- SECURITY DEFINER (bypasses RLS on proceedings) — appeals_select cannot
+-- query proceedings directly since proceedings_select also queries appeals,
+-- which would make the two policies mutually recursive.
+-- proceedings.guest_ids uuid[] (see supabase/migrations/20260723_*.sql) is
+-- the dedicated guest_manager/guest_user access-grant column — separate
+-- from assigned_to_ids, which is staff assignment (sp_admin/sp_staff/director).
+CREATE OR REPLACE FUNCTION is_guest_assigned_to_appeal(target_appeal_id uuid)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM proceedings p
+    WHERE p.appeal_id = target_appeal_id AND p.guest_ids @> ARRAY[auth.uid()]
+  )
+$$;
+GRANT EXECUTE ON FUNCTION is_guest_assigned_to_appeal(uuid) TO authenticated;
+
+-- Used by organizations_select's guest_manager/guest_user branch — lets
+-- guests read the ONE client org tied to their assigned proceeding's
+-- litigation (needed for the read-only litigation summary), without
+-- querying organizations itself (avoids recursion).
+CREATE OR REPLACE FUNCTION is_guest_client_org(target_org_id uuid)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM appeals a
+    JOIN proceedings p ON p.appeal_id = a.id
+    WHERE a.client_org_id = target_org_id AND p.guest_ids @> ARRAY[auth.uid()]
+  )
+$$;
+GRANT EXECUTE ON FUNCTION is_guest_client_org(uuid) TO authenticated;
 
 -- ─── ROW LEVEL SECURITY ──────────────────────────────────────
 
@@ -324,12 +360,17 @@ ALTER TABLE templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE forms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 
--- Organizations: platform admins see all; SP users see their SP + their clients; clients see their org
+-- Organizations: platform admins see all; SP users see their SP + their clients; clients see their org.
+-- guest_manager/guest_user get only the client org tied to their assigned proceeding(s).
 CREATE POLICY "organizations_select" ON organizations FOR SELECT USING (
   get_my_role() IN ('super_admin', 'platform_admin')
   OR id = get_my_org_id()
   OR id = get_my_sp_id()
   OR parent_sp_id = get_my_sp_id()
+  OR (
+    get_my_role() IN ('guest_manager', 'guest_user')
+    AND is_guest_client_org(organizations.id)
+  )
 );
 CREATE POLICY "organizations_insert" ON organizations FOR INSERT WITH CHECK (
   get_my_role() IN ('super_admin', 'platform_admin', 'sp_admin')
@@ -400,7 +441,9 @@ CREATE POLICY "masters_delete" ON master_records FOR DELETE USING (
   OR (level = 'service_provider' AND get_my_role() = 'sp_admin' AND service_provider_id = get_my_sp_id())
 );
 
--- Appeals: scoped to SP; clients see their org's appeals
+-- Appeals: scoped to SP; clients see their org's appeals; guest_manager/
+-- guest_user see the parent litigation of any proceeding they're assigned to
+-- (read-only litigation summary, not the appeal's other proceedings)
 CREATE POLICY "appeals_select" ON appeals FOR SELECT USING (
   get_my_role() IN ('super_admin', 'platform_admin')
   OR service_provider_id = get_my_sp_id()
@@ -408,6 +451,10 @@ CREATE POLICY "appeals_select" ON appeals FOR SELECT USING (
     SELECT org_id FROM user_org_memberships WHERE user_id = auth.uid() AND is_active = true
   )
   OR client_org_id = get_my_org_id()
+  OR (
+    get_my_role() IN ('guest_manager', 'guest_user')
+    AND is_guest_assigned_to_appeal(appeals.id)
+  )
 );
 CREATE POLICY "appeals_insert" ON appeals FOR INSERT WITH CHECK (
   get_my_role() IN ('sp_admin', 'sp_staff')
@@ -418,7 +465,11 @@ CREATE POLICY "appeals_update" ON appeals FOR UPDATE USING (
   AND service_provider_id = get_my_sp_id()
 );
 
--- Proceedings: same SP scoping as appeals
+-- Proceedings: same SP scoping as appeals. guest_manager/guest_user are
+-- narrower still — they only see proceedings where they personally appear
+-- in guest_ids (never full SP-wide access like sp_admin/sp_staff/director,
+-- and separate from assigned_to_ids, which is staff assignment).
+-- proceedings.guest_ids uuid[] — see supabase/migrations/20260723_*.sql
 CREATE POLICY "proceedings_select" ON proceedings FOR SELECT USING (
   get_my_role() IN ('super_admin', 'platform_admin')
   OR service_provider_id = get_my_sp_id()
@@ -431,6 +482,10 @@ CREATE POLICY "proceedings_select" ON proceedings FOR SELECT USING (
       )
     )
   )
+  OR (
+    get_my_role() IN ('guest_manager', 'guest_user')
+    AND guest_ids @> ARRAY[auth.uid()]
+  )
 );
 CREATE POLICY "proceedings_insert" ON proceedings FOR INSERT WITH CHECK (
   get_my_role() IN ('sp_admin', 'sp_staff') AND service_provider_id = get_my_sp_id()
@@ -439,7 +494,8 @@ CREATE POLICY "proceedings_update" ON proceedings FOR UPDATE USING (
   get_my_role() IN ('sp_admin', 'sp_staff') AND service_provider_id = get_my_sp_id()
 );
 
--- Events: same SP scoping
+-- Events: same SP scoping. guest_manager/guest_user reach follows whichever
+-- proceeding(s) they're assigned to, same as proceedings_select.
 CREATE POLICY "events_select" ON events FOR SELECT USING (
   get_my_role() IN ('super_admin', 'platform_admin')
   OR service_provider_id = get_my_sp_id()
@@ -451,6 +507,13 @@ CREATE POLICY "events_select" ON events FOR SELECT USING (
       OR a.client_org_id IN (
         SELECT org_id FROM user_org_memberships WHERE user_id = auth.uid() AND is_active = true
       )
+    )
+  )
+  OR (
+    get_my_role() IN ('guest_manager', 'guest_user')
+    AND EXISTS (
+      SELECT 1 FROM proceedings p
+      WHERE p.id = proceeding_id AND p.guest_ids @> ARRAY[auth.uid()]
     )
   )
 );

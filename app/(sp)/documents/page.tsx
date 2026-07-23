@@ -36,8 +36,8 @@ export default async function DocumentsPage() {
       .order("sort_order"),
   ]);
 
-  const canEdit = user?.role === "sp_admin" || user?.role === "sp_staff";
-  const canDelete = user?.role === "sp_admin";
+  const canEdit = user?.role === "sp_admin" || user?.role === "sp_staff" || user?.role === "director";
+  const canDelete = user?.role === "sp_admin" || user?.role === "director";
 
   return (
     <div className="p-8">

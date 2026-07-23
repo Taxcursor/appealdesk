@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 export default async function NewSpUserPage() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "sp_admin") redirect("/users");
+  if (!user || !["sp_admin", "director"].includes(user.role)) redirect("/users");
 
   return (
     <div className="p-8 max-w-3xl">

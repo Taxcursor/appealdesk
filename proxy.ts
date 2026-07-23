@@ -74,7 +74,9 @@ export async function proxy(request: NextRequest) {
     url.pathname =
       profile.role === "super_admin" || profile.role === "platform_admin"
         ? "/platform/dashboard"
-        : "/dashboard";
+        : profile.role === "guest_manager" || profile.role === "guest_user"
+          ? "/proceedings"
+          : "/dashboard";
     return NextResponse.redirect(url);
   }
 

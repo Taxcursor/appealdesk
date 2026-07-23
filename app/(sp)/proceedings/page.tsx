@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/user";
 import { redirect } from "next/navigation";
 import ProceedingsSummaryClient from "@/components/sp/ProceedingsSummaryClient";
+import GuestProceedingsClient from "@/components/sp/GuestProceedingsClient";
 import { getActCategory } from "@/lib/actCategory";
 import { getBulkDemandTotals } from "@/app/(sp)/litigations/demand-actions";
 
@@ -26,6 +27,39 @@ export default async function ProceedingsPage({
   // so send them straight to their own Level 2 page.
   if (user?.role === "client") {
     redirect(`/proceedings/${user.org_id}`);
+  }
+
+  // Guest roles never see the cross-client rollup — only the specific
+  // proceeding(s) they're personally granted guest access to, via
+  // guest_ids (separate from assigned_to_ids, which is staff assignment).
+  if (user?.role === "guest_manager" || user?.role === "guest_user") {
+    const { data: myProceedings } = await supabase
+      .from("proceedings")
+      .select(`
+        id, status, authority_type, authority_name, jurisdiction, jurisdiction_city,
+        importance, mode, initiated_on, to_be_completed_by, possible_outcome,
+        proceeding_type:master_records!proceeding_type_id(id, name),
+        appeal:appeals!appeal_id(
+          id, status,
+          client_org:organizations!client_org_id(id, name),
+          act_regulation:master_records!act_regulation_id(id, name),
+          financial_year:master_records!financial_year_id(id, name),
+          assessment_year:master_records!assessment_year_id(id, name),
+          litigation_type:master_records!litigation_type_id(id, name)
+        )
+      `)
+      .contains("guest_ids", [user.id])
+      .is("deleted_at", null)
+      .order("to_be_completed_by", { ascending: true, nullsFirst: false });
+
+    return (
+      <div className="p-8">
+        <GuestProceedingsClient
+          proceedings={(myProceedings ?? []) as any}
+          canEdit={user.role === "guest_manager"}
+        />
+      </div>
+    );
   }
 
   // Status default differs from Litigations: absent = "open only" (not "all").
@@ -160,7 +194,7 @@ export default async function ProceedingsPage({
         currentClients={filterClients}
         currentActs={filterActs}
         currentStatuses={filterStatuses}
-        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff"}
+        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff" || user?.role === "director"}
       />
     </div>
   );

@@ -11,7 +11,7 @@ export interface UserInput {
   last_name: string;
   email: string;
   password: string;
-  role: "sp_admin" | "sp_staff" | "client";
+  role: "sp_admin" | "sp_staff" | "director" | "guest_manager" | "guest_user" | "client";
   client_org_id?: string;
   // Contact
   mobile_country_code?: string;
@@ -40,7 +40,7 @@ export interface UserInput {
 
 export async function createUser(input: UserInput) {
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!currentUser || !["sp_admin", "director"].includes(currentUser.role)) throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
 
@@ -116,7 +116,7 @@ export async function createUser(input: UserInput) {
 
 export async function toggleUserStatus(id: string, isActive: boolean) {
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!currentUser || !["sp_admin", "director"].includes(currentUser.role)) throw new Error("Unauthorized");
   if (id === currentUser.id) throw new Error("Cannot deactivate your own account");
 
   const supabase = await createServiceClient();
@@ -137,7 +137,7 @@ export interface UserEditInput {
   first_name: string;
   middle_name?: string;
   last_name: string;
-  role: "sp_admin" | "sp_staff" | "client";
+  role: "sp_admin" | "sp_staff" | "director" | "guest_manager" | "guest_user" | "client";
   client_org_id?: string;
   new_password?: string; // blank = don't change
   // Contact
@@ -167,7 +167,7 @@ export interface UserEditInput {
 
 export async function updateUser(id: string, input: UserEditInput) {
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!currentUser || !["sp_admin", "director"].includes(currentUser.role)) throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
   const isSpUser = input.role !== "client";
@@ -221,7 +221,7 @@ export async function updateUser(id: string, input: UserEditInput) {
 
 export async function deleteUser(id: string) {
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!currentUser || !["sp_admin", "director"].includes(currentUser.role)) throw new Error("Unauthorized");
   if (id === currentUser.id) throw new Error("Cannot delete your own account");
 
   const supabase = await createServiceClient();

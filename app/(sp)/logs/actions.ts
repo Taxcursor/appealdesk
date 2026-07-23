@@ -13,7 +13,7 @@ export interface LogFilters {
 
 export async function exportLogs(filters: LogFilters) {
   const user = await getCurrentUser();
-  if (user?.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!user || !["sp_admin", "director"].includes(user.role)) throw new Error("Unauthorized");
 
   const supabase = await createClient();
   const spId = user.service_provider_id ?? user.org_id;

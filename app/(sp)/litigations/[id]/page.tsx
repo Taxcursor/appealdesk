@@ -24,7 +24,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
         id, authority_type, authority_name, deleted_at,
         proceeding_type:master_records!proceeding_type_id(id, name),
         jurisdiction, jurisdiction_city, importance, mode, status,
-        initiated_on, to_be_completed_by, assigned_to_ids, client_staff_ids,
+        initiated_on, to_be_completed_by, assigned_to_ids, client_staff_ids, guest_ids,
         possible_outcome, is_active, created_at,
         events(
           id, event_type, category, parent_event_id, event_date, status, event_notice_number, description, details, created_at, deleted_at,
@@ -40,7 +40,7 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
 
   const clientOrgId = (appeal as any).client_org_id as string;
 
-  const [{ data: clients }, { data: teamMembers }, { data: clientUsers }, { data: masters }, { data: panRow }] = await Promise.all([
+  const [{ data: clients }, { data: teamMembers }, { data: clientUsers }, { data: guestUsers }, { data: masters }, { data: panRow }] = await Promise.all([
     supabase
       .from("organizations")
       .select("id, name")
@@ -53,13 +53,19 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
       .select("id, first_name, last_name")
       .eq("org_id", spId!)
       .eq("is_active", true)
-      .in("role", ["sp_admin", "sp_staff"]),
+      .in("role", ["sp_admin", "sp_staff", "director"]),
     supabase
       .from("users")
       .select("id, first_name, last_name")
       .eq("org_id", clientOrgId)
       .eq("role", "client")
       .eq("is_active", true),
+    supabase
+      .from("users")
+      .select("id, first_name, last_name, role")
+      .eq("org_id", spId!)
+      .eq("is_active", true)
+      .in("role", ["guest_manager", "guest_user"]),
     supabase
       .from("master_records")
       .select("id, name, type, parent_id")
@@ -97,8 +103,9 @@ export default async function AppealDetailPage({ params }: { params: Promise<{ i
         clients={clients ?? []}
         teamMembers={teamMembers ?? []}
         clientUsers={clientUsers ?? []}
+        guestUsers={guestUsers ?? []}
         mastersByType={mastersByType}
-        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff"}
+        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff" || user?.role === "director"}
         clientPan={clientPan}
       />
     </div>

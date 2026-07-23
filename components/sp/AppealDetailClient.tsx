@@ -134,6 +134,7 @@ interface Proceeding {
   to_be_completed_by: string | null;
   assigned_to_ids: string[] | null;
   client_staff_ids: string[] | null;
+  guest_ids: string[] | null;
   possible_outcome: string | null;
   status: string | null;
   is_active: boolean;
@@ -322,6 +323,7 @@ interface Props {
   clients: { id: string; name: string }[];
   teamMembers: { id: string; first_name: string; last_name: string }[];
   clientUsers: { id: string; first_name: string; last_name: string }[];
+  guestUsers: { id: string; first_name: string; last_name: string; role: string }[];
   mastersByType: Record<string, MasterItem[]>;
   canEdit: boolean;
   clientPan?: string;
@@ -1573,6 +1575,7 @@ function ProceedingFormFields({
   mastersByType,
   teamMembers,
   clientUsers,
+  guestUsers,
   actRegulationId,
   clientPan,
   clientGstNumbers,
@@ -1583,6 +1586,7 @@ function ProceedingFormFields({
   mastersByType: Record<string, MasterItem[]>;
   teamMembers: { id: string; first_name: string; last_name: string }[];
   clientUsers: { id: string; first_name: string; last_name: string }[];
+  guestUsers: { id: string; first_name: string; last_name: string; role: string }[];
   actRegulationId?: string;
   clientPan?: string;
   clientGstNumbers?: string[];
@@ -1766,6 +1770,24 @@ function ProceedingFormFields({
           selected={values.client_staff_ids ?? []}
           onChange={(ids) => onMultiChange("client_staff_ids", ids)}
           placeholder="None"
+        />
+      </Field>
+      <Field label="Guest User" fullWidth>
+        <MultiSelect
+          compact
+          options={[...guestUsers]
+            .sort((a, b) =>
+              `${a.first_name} ${a.last_name}`.localeCompare(
+                `${b.first_name} ${b.last_name}`,
+              ),
+            )
+            .map((u) => ({
+              value: u.id,
+              label: `${u.first_name} ${u.last_name} (${u.role === "guest_manager" ? "Guest Manager" : "Guest User"})`,
+            }))}
+          selected={values.guest_ids ?? []}
+          onChange={(ids) => onMultiChange("guest_ids", ids)}
+          placeholder="No guest access"
         />
       </Field>
       {/* Row 5: Possible Outcome | Status | PAN (IT acts only, read-only) */}
@@ -3350,6 +3372,7 @@ export default function AppealDetailClient({
   clients,
   teamMembers,
   clientUsers,
+  guestUsers,
   mastersByType,
   canEdit,
   clientPan,
@@ -3534,6 +3557,7 @@ export default function AppealDetailClient({
         to_be_completed_by: proc.to_be_completed_by ?? "",
         assigned_to_ids: proc.assigned_to_ids ?? [],
         client_staff_ids: proc.client_staff_ids ?? [],
+        guest_ids: proc.guest_ids ?? [],
         possible_outcome:
           field === "possible_outcome" ? value : (proc.possible_outcome ?? ""),
         status: field === "status" ? value : (proc.status ?? "open"),
@@ -3600,6 +3624,7 @@ export default function AppealDetailClient({
       to_be_completed_by: proc.to_be_completed_by ?? "",
       assigned_to_ids: proc.assigned_to_ids ?? [],
       client_staff_ids: proc.client_staff_ids ?? [],
+      guest_ids: proc.guest_ids ?? [],
       possible_outcome: proc.possible_outcome ?? "",
       status: proc.status ?? "open",
       gst_number: proc.gst_number ?? "",
@@ -4427,6 +4452,10 @@ export default function AppealDetailClient({
               .map((id) => clientUsers.find((u) => u.id === id))
               .filter(Boolean)
               .map((u) => `${u!.first_name} ${u!.last_name}`);
+            const guestNames = (proc.guest_ids ?? [])
+              .map((id) => guestUsers.find((u) => u.id === id))
+              .filter(Boolean)
+              .map((u) => `${u!.first_name} ${u!.last_name}`);
             const sortedEvents = [...(proc.events ?? [])]
               .filter((e) => !e.deleted_at)
               .sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -4905,6 +4934,13 @@ export default function AppealDetailClient({
                           clientStaffNames.length > 0
                             ? clientStaffNames.join(", ")
                             : null
+                        }
+                      />
+                      <DetailRow
+                        light
+                        label="Guest User"
+                        value={
+                          guestNames.length > 0 ? guestNames.join(", ") : null
                         }
                       />
                       <DetailRow
@@ -5837,6 +5873,7 @@ export default function AppealDetailClient({
                   mastersByType={mastersByType}
                   teamMembers={teamMembers}
                   clientUsers={clientUsers}
+                  guestUsers={guestUsers}
                   actRegulationId={appeal.act_regulation?.id ?? undefined}
                   clientPan={clientPan}
                   clientGstNumbers={clientGstNumbers}
@@ -5984,6 +6021,7 @@ export default function AppealDetailClient({
                   mastersByType={mastersByType}
                   teamMembers={teamMembers}
                   clientUsers={clientUsers}
+                  guestUsers={guestUsers}
                   actRegulationId={appeal.act_regulation?.id ?? undefined}
                   clientPan={clientPan}
                   clientGstNumbers={clientGstNumbers}

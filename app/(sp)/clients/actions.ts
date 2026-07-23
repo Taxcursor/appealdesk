@@ -31,7 +31,7 @@ export interface ClientInput {
 
 export async function createClientOrg(input: ClientInput) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!user || !["sp_admin", "director"].includes(user.role)) throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
 
@@ -78,7 +78,7 @@ export async function createClientOrg(input: ClientInput) {
 
 export async function updateClientOrg(id: string, input: ClientInput) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!user || !["sp_admin", "director"].includes(user.role)) throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
 
@@ -126,7 +126,7 @@ export async function updateClientOrg(id: string, input: ClientInput) {
 
 export async function deleteClient(id: string): Promise<void> {
   const user = await getCurrentUser();
-  if (!user || user.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!user || !["sp_admin", "director"].includes(user.role)) throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
 
@@ -170,7 +170,7 @@ export async function deleteClient(id: string): Promise<void> {
 
 export async function toggleClientStatus(id: string, isActive: boolean) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "sp_admin") throw new Error("Unauthorized");
+  if (!user || !["sp_admin", "director"].includes(user.role)) throw new Error("Unauthorized");
 
   const supabase = await createServiceClient();
 

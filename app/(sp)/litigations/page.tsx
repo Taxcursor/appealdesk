@@ -89,7 +89,7 @@ export default async function AppealsPage({
     supabase.from("appeals").select("financial_year:master_records!financial_year_id(id, name)").eq("service_provider_id", spId!).not("financial_year_id", "is", null).is("deleted_at", null),
     supabase.from("appeals").select("assessment_year:master_records!assessment_year_id(id, name)").eq("service_provider_id", spId!).not("assessment_year_id", "is", null).is("deleted_at", null),
     supabase.from("appeals").select("litigation_type:master_records!litigation_type_id(id, name)").eq("service_provider_id", spId!).not("litigation_type_id", "is", null).is("deleted_at", null),
-    supabase.from("users").select("id, first_name, last_name").eq("org_id", spId!).in("role", ["sp_admin", "sp_staff"]).eq("is_active", true).is("deleted_at", null).order("first_name"),
+    supabase.from("users").select("id, first_name, last_name").eq("org_id", spId!).in("role", ["sp_admin", "sp_staff", "director"]).eq("is_active", true).is("deleted_at", null).order("first_name"),
   ]);
 
   const teamMembers = (userRows ?? []).map((u: any) => ({
@@ -107,7 +107,7 @@ export default async function AppealsPage({
         assessmentYears={dedupeRecords(ayRows, "assessment_year")}
         litigationTypeOptions={dedupeRecords(litTypeRows, "litigation_type")}
         teamMembers={teamMembers}
-        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff"}
+        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff" || user?.role === "director"}
         totalCount={count ?? 0}
         page={page}
         perPage={perPage}

@@ -174,7 +174,7 @@ export default async function ProceedingClientPage({
         currentFYs={filterFYs}
         currentStatuses={filterStatuses}
         currentCategory={categoryParam}
-        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff"}
+        canEdit={user?.role === "sp_admin" || user?.role === "sp_staff" || user?.role === "director"}
       />
     </div>
   );

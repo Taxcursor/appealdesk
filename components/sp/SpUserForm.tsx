@@ -242,6 +242,9 @@ export default function SpUserForm() {
             <select value={form.role} onChange={(e) => set("role")(e.target.value as UserInput["role"])} className={inp}>
               <option value="sp_admin">Admin</option>
               <option value="sp_staff">Staff</option>
+              <option value="director">Director</option>
+              <option value="guest_manager">Guest Manager</option>
+              <option value="guest_user">Guest User</option>
             </select>
           </Field>
 

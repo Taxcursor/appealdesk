@@ -4,9 +4,11 @@ export async function logAction(
   supabase: SupabaseClient,
   params: {
     actorId: string;
-    spId: string;
+    // null for platform-scoped actions (e.g. platform master records) that
+    // aren't tied to any single service provider.
+    spId: string | null;
     action: "create" | "update" | "delete";
-    entityType: "appeal" | "proceeding" | "event" | "document" | "user" | "organization";
+    entityType: "appeal" | "proceeding" | "event" | "document" | "user" | "organization" | "master_record";
     entityLabel?: string;
   }
 ) {
