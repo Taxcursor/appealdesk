@@ -23,7 +23,7 @@ body:
       label: Proposed solution
       description: Describe what you'd like to see built.
     validations:
-      required: true
+      required: false
 
   - type: checkboxes
     id: module
