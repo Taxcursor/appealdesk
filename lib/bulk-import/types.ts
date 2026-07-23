@@ -30,9 +30,8 @@ export interface ParsedClientRow {
   tan_number?: string;
   tan_login_id?: string;
   tan_password?: string;
+  /** Only stored when business_type is "Individual" */
   aadhaar_number?: string;
-  aadhaar_login_id?: string;
-  aadhaar_password?: string;
 }
 
 export interface ParsedTeamUserRow {

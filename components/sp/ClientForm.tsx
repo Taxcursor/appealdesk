@@ -12,7 +12,6 @@ const BUSINESS_TYPES_FALLBACK = ["Company", "Trust", "Partnership", "LLP", "Sole
 const FIXED_TYPES = ["pan", "aadhaar", "tan", "gst"];
 const COMPLIANCE_TYPES = [
   { key: "pan", label: "PAN" },
-  { key: "aadhaar", label: "Aadhaar" },
   { key: "tan", label: "TAN" },
   { key: "gst", label: "GST" },
 ] as const;
@@ -96,6 +95,11 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const aadhaarInitial = initialCompliance?.find((c) => c.type === "aadhaar");
+  const [aadhaarNumber, setAadhaarNumber] = useState(aadhaarInitial?.number ?? "");
+  const [aadhaarAttachmentUrl, setAadhaarAttachmentUrl] = useState(aadhaarInitial?.attachment_url ?? "");
+  const [aadhaarUploading, setAadhaarUploading] = useState(false);
+
   const [compliance, setCompliance] = useState<Record<string, ComplianceState>>(() => {
     const init: Record<string, ComplianceState> = {};
     COMPLIANCE_TYPES.forEach(({ key }) => {
@@ -173,6 +177,15 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
     setLogoUploading(false);
   }
 
+  async function handleAadhaarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAadhaarUploading(true);
+    const url = await uploadFile(file, `compliance/aadhaar/${Date.now()}-${file.name}`);
+    if (url) setAadhaarAttachmentUrl(url);
+    setAadhaarUploading(false);
+  }
+
   async function handleAttachmentUpload(type: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -207,6 +220,13 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
         credential: compliance[key].credential || undefined,
         attachment_url: compliance[key].attachment_url || undefined,
       })),
+      ...(businessType === "Individual"
+        ? [{
+            type: "aadhaar",
+            number: aadhaarNumber || undefined,
+            attachment_url: aadhaarAttachmentUrl || undefined,
+          }]
+        : []),
       ...extraRows.map((r) => ({
         type: r.type,
         number: r.number || undefined,
@@ -312,8 +332,22 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
               className={fieldClass}
             />
           </div>
+          {businessType === "Individual" && (
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">
+                Aadhar Number <span className="text-muted">(Optional)</span>
+              </label>
+              <input
+                value={aadhaarNumber}
+                onChange={(e) => setAadhaarNumber(e.target.value)}
+                disabled={readOnly}
+                placeholder="XXXX XXXX XXXX"
+                className={fieldClass}
+              />
+            </div>
+          )}
           {!readOnly && (
-            <div className="col-span-2">
+            <div className={businessType === "Individual" ? "" : "col-span-2"}>
               <label className="block text-xs font-medium text-secondary mb-1.5">
                 Logo <span className="text-muted">(JPG/PNG, max 2MB)</span>
               </label>
@@ -331,10 +365,38 @@ export default function ClientForm({ mode, clientId, initialData, initialComplia
               </div>
             </div>
           )}
+          {businessType === "Individual" && !readOnly && (
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Attach Aadhar</label>
+              <div className="flex items-center gap-4">
+                {aadhaarAttachmentUrl && (
+                  <a href={aadhaarAttachmentUrl} target="_blank" rel="noopener noreferrer" title="View attachment"
+                    className="p-2 rounded-lg border border-border text-accent hover:text-primary hover:bg-page transition inline-flex">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  </a>
+                )}
+                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg text-secondary hover:bg-page transition">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {aadhaarUploading ? "Uploading…" : aadhaarAttachmentUrl ? "Change Aadhar" : "Upload Aadhar"}
+                  <input type="file" accept=".pdf,image/jpeg,image/png" className="hidden" onChange={handleAadhaarUpload} disabled={aadhaarUploading} />
+                </label>
+              </div>
+            </div>
+          )}
           {readOnly && logoUrl && (
-            <div className="col-span-2">
+            <div className={businessType === "Individual" ? "" : "col-span-2"}>
               <label className="block text-xs font-medium text-secondary mb-1.5">Logo</label>
               <Image src={logoUrl} alt="Logo" width={64} height={64} className="w-16 h-16 rounded-lg object-cover border border-border" />
+            </div>
+          )}
+          {businessType === "Individual" && readOnly && aadhaarAttachmentUrl && (
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Attach Aadhar</label>
+              <a href={aadhaarAttachmentUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:text-primary underline">
+                View Aadhaar
+              </a>
             </div>
           )}
         </div>

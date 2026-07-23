@@ -106,11 +106,13 @@ function getCellText(row: any, col: number): string {
 
 // ─── Template generators ──────────────────────────────────────────────────────
 
-export async function downloadClientTemplate(): Promise<void> {
+export async function downloadClientTemplate(businessTypes?: string[]): Promise<void> {
   const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   const data = wb.addWorksheet("Data");
   const lists = wb.addWorksheet("_Lists");
+
+  const businessTypeList = businessTypes?.length ? businessTypes : BUSINESS_TYPES;
 
   data.columns = [
     { header: "Client Name *", key: "name", width: 30 },
@@ -132,14 +134,12 @@ export async function downloadClientTemplate(): Promise<void> {
     { header: "TAN Number", key: "tn", width: 16 },
     { header: "TAN Login ID", key: "tl", width: 22 },
     { header: "TAN Password", key: "tp", width: 22 },
-    { header: "Aadhaar Number", key: "an", width: 18 },
-    { header: "Aadhaar Login ID", key: "al", width: 22 },
-    { header: "Aadhaar Password", key: "ap", width: 22 },
+    { header: "Aadhaar Number (Individual only)", key: "aadh", width: 28 },
   ];
 
   styleHeaderRow(data.getRow(1));
 
-  const [btRef, stRef] = buildListsSheet(lists, [BUSINESS_TYPES, INDIAN_STATES]);
+  const [btRef, stRef] = buildListsSheet(lists, [businessTypeList, INDIAN_STATES]);
   addDropdownValidation(data, 4, btRef);  // col 4 = Business Type
   addDropdownValidation(data, 9, stRef);  // col 9 = State
 
@@ -262,8 +262,6 @@ export async function parseClientFile(file: File): Promise<ParsedClientRow[]> {
       tan_login_id: getCellText(row, 18) || undefined,
       tan_password: getCellText(row, 19) || undefined,
       aadhaar_number: getCellText(row, 20) || undefined,
-      aadhaar_login_id: getCellText(row, 21) || undefined,
-      aadhaar_password: getCellText(row, 22) || undefined,
     });
   });
 

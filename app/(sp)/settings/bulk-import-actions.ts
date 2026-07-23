@@ -242,16 +242,16 @@ export async function importBulkClients(
         credential: row.tan_password || null,
       });
     }
-    if (row.aadhaar_number || row.aadhaar_login_id || row.aadhaar_password) {
+    // Aadhaar only applies to Individual clients
+    if (row.business_type?.trim().toLowerCase() === "individual" && row.aadhaar_number) {
       complianceRows.push({
         org_id: org.id,
         type: "aadhaar",
-        number: row.aadhaar_number || null,
-        login_id: row.aadhaar_login_id || null,
-        credential: row.aadhaar_password || null,
+        number: row.aadhaar_number,
+        login_id: null,
+        credential: null,
       });
     }
-
     const { error: complianceErr } = await supabase
       .from("compliance_details")
       .insert(complianceRows);

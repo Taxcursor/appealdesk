@@ -50,6 +50,7 @@ interface Props {
   currentStatuses: string[];
   currentSortDir: string;
   userId: string;
+  businessTypes?: string[];
 }
 
 const STATUS_OPTIONS: NamedRecord[] = [
@@ -174,7 +175,7 @@ function MultiSelect({
 export default function ClientsClient({
   clients, isAdmin,
   currentClientIds, currentBtypes, currentCities, currentStatuses, currentSortDir,
-  userId,
+  userId, businessTypes,
 }: Props) {
   const router = useRouter();
   const [loading,       setLoading]       = useState<string | null>(null);
@@ -296,7 +297,7 @@ export default function ClientsClient({
           </p>
         </div>
         {isAdmin && (
-          <SplitImportButton addHref="/clients/new" addLabel="Add Client" importType="clients" />
+          <SplitImportButton addHref="/clients/new" addLabel="Add Client" importType="clients" businessTypes={businessTypes} />
         )}
       </div>
 

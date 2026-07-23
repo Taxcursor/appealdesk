@@ -22,6 +22,7 @@ interface Props {
   addLabel: string;
   importType: ImportType;
   clientOrgs?: ClientOrgOption[];
+  businessTypes?: string[];
 }
 
 export default function SplitImportButton({
@@ -29,6 +30,7 @@ export default function SplitImportButton({
   addLabel,
   importType,
   clientOrgs = [],
+  businessTypes = [],
 }: Props) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -51,7 +53,7 @@ export default function SplitImportButton({
     setDropdownOpen(false);
     setDownloading(true);
     try {
-      if (importType === "clients") await downloadClientTemplate();
+      if (importType === "clients") await downloadClientTemplate(businessTypes);
       else if (importType === "team-users") await downloadTeamUserTemplate();
       else await downloadClientUserTemplate(clientOrgs);
     } catch (e: unknown) {
